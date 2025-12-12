@@ -1,0 +1,171 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>注册 - 聊天室</title>
+    <style>
+        /* 保持之前的紫色风格，稍微调整以适应弹窗 */
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            height: 100vh; display: flex; justify-content: center; align-items: center;
+        }
+
+        /* 注册卡片 */
+        .login-card {
+            background: white; padding: 40px; border-radius: 15px;
+            box-shadow: 0 10px 25px rgba(0,0,0,0.2); width: 100%; max-width: 400px; text-align: center;
+            position: relative; z-index: 1;
+        }
+        .logo-circle {
+            width: 80px; height: 80px; margin: 0 auto 20px; border-radius: 50%;
+            overflow: hidden; border: 2px solid #eee;
+        }
+        .logo-circle img { width: 100%; height: 100%; object-fit: cover; }
+        h2 { margin-bottom: 20px; color: #333; }
+        .form-group { margin-bottom: 20px; text-align: left; }
+        label { display: block; font-weight: bold; margin-bottom: 5px; color: #333; }
+        .hint { font-size: 0.8em; color: #888; float: right; font-weight: normal; }
+        input {
+            width: 100%; padding: 12px; border: 2px solid #e0e0e0; border-radius: 8px; font-size: 16px;
+        }
+        input:focus { outline: none; border-color: #667eea; }
+        .btn-primary {
+            width: 100%; padding: 12px; border-radius: 25px; background-color: #333; color: white;
+            border: none; font-size: 16px; font-weight: bold; cursor: pointer; margin-top: 10px;
+        }
+        .error-msg { color: #ff4757; font-size: 0.9em; margin-bottom: 15px; display: none; }
+        .login-link { margin-top: 20px; display: block; font-size: 0.9em; color: #666; text-decoration: none; }
+
+        /* --- 弹窗样式 (Modal) --- */
+        .modal-overlay {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.5); /* 半透明黑色背景 */
+            display: none; /* 默认隐藏 */
+            justify-content: center; align-items: center;
+            z-index: 999;
+        }
+        .modal-box {
+            background: white; width: 90%; max-width: 400px;
+            padding: 30px; border-radius: 15px; text-align: center;
+            box-shadow: 0 20px 50px rgba(0,0,0,0.3);
+            animation: popIn 0.3s ease;
+        }
+        @keyframes popIn {
+            from { transform: scale(0.8); opacity: 0; }
+            to { transform: scale(1); opacity: 1; }
+        }
+        .modal-title { font-size: 22px; margin-bottom: 10px; color: #333; font-weight: bold; }
+        .modal-info { text-align: left; background: #f9f9f9; padding: 15px; border-radius: 8px; margin: 20px 0; }
+        .modal-row { display: flex; margin-bottom: 10px; font-size: 16px; }
+        .modal-label { font-weight: bold; width: 60px; color: #555; }
+        .modal-value { color: #000; font-family: monospace; font-size: 18px; }
+        .btn-enter {
+            display: block; width: 100%; padding: 12px; background: white; color: #333;
+            border: 2px solid #333; border-radius: 25px; text-decoration: none; font-weight: bold;
+            transition: 0.2s;
+        }
+        .btn-enter:hover { background: #333; color: white; }
+    </style>
+</head>
+<body>
+
+    <div class="login-card">
+        <div class="logo-circle">
+            <img src="{% static 'chat/images/logo.png' %}" alt="Logo">
+        </div>
+        <h2>欢迎注册</h2>
+
+        <div id="error-box" class="error-msg"></div>
+
+        <form id="registerForm">
+            <div class="form-group">
+                <label>用户名 <span class="hint">(必填)</span></label>
+                <input type="text" id="username" required>
+            </div>
+            <div class="form-group">
+                <label>密码 <span class="hint">(6-20位)</span></label>
+                <input type="password" id="password" minlength="6" maxlength="20" required>
+            </div>
+            <button type="submit" class="btn-primary">立即注册</button>
+        </form>
+
+        <a href="{% url 'login' %}" class="login-link">已有账号？去登录</a>
+    </div>
+
+    <div class="modal-overlay" id="successModal">
+        <div class="modal-box">
+            <div class="modal-title">注册完成</div>
+            <p>欢迎 <span id="modal-user"></span> 使用</p>
+
+            <div class="modal-info">
+                <p style="margin-bottom: 10px; font-size: 0.9em; color:#888;">请保存您的信息：</p>
+                <div class="modal-row">
+                    <span class="modal-label">账号:</span>
+                    <span class="modal-value" id="modal-id"></span>
+                </div>
+                <div class="modal-row">
+                    <span class="modal-label">密码:</span>
+                    <span class="modal-value" id="modal-pwd"></span>
+                </div>
+            </div>
+
+            <a href="#" id="enterBtn" class="btn-enter">立即进入</a>
+        </div>
+    </div>
+
+    <script>
+        const form = document.getElementById('registerForm');
+        const errorBox = document.getElementById('error-box');
+        const modal = document.getElementById('successModal');
+
+        form.addEventListener('submit', function(e) {
+            e.preventDefault(); // 阻止表单默认提交刷新页面
+
+            const usernameVal = document.getElementById('username').value;
+            const passwordVal = document.getElementById('password').value;
+
+            // 发送 Fetch 请求
+            fetch('/register/', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-Requested-With': 'XMLHttpRequest',
+                    'X-CSRFToken': '{{ csrf_token }}' // 必带的 Django 安全令牌
+                },
+                body: JSON.stringify({
+                    username: usernameVal,
+                    password: passwordVal
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    // 注册成功，填充数据并显示弹窗
+                    document.getElementById('modal-user').innerText = data.username;
+                    document.getElementById('modal-id').innerText = '(ID: ' + data.uid + ')';
+                    document.getElementById('modal-pwd').innerText = data.password_backup;
+
+                    // 设置跳转链接
+                    document.getElementById('enterBtn').href = data.redirect_url;
+
+                    // 显示弹窗
+                    modal.style.display = 'flex';
+                } else {
+                    // 显示错误信息
+                    errorBox.innerText = '⚠️ ' + data.error;
+                    errorBox.style.display = 'block';
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                errorBox.innerText = '⚠️ 网络错误，请重试';
+                errorBox.style.display = 'block';
+            });
+        });
+    </script>
+</body>
+</html>

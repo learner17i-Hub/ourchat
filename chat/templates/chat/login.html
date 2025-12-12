@@ -1,0 +1,105 @@
+{% load static %} <!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>登录 - 聊天室</title>
+    <style>
+        /* 全局重置 */
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+
+        .login-card {
+            background: white;
+            padding: 40px;
+            border-radius: 15px;
+            box-shadow: 0 10px 25px rgba(0,0,0,0.2);
+            width: 100%;
+            max-width: 400px;
+            text-align: center;
+        }
+
+        /* LOGO 容器样式调整 */
+        .logo-circle {
+            width: 80px;
+            height: 80px;
+            margin: 0 auto 30px;
+            border-radius: 50%; /* 保持圆形 */
+            overflow: hidden;   /* 确保图片超出圆圈的部分被切掉 */
+            /* 如果你的 Logo 自带边框，可以把下面这行 border 删掉 */
+            border: 2px solid #eee;
+            background-color: white;
+        }
+
+        /* 让图片完美适应容器 */
+        .logo-circle img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover; /* 保证图片填满圆圈，不变形 */
+        }
+
+        .form-group { margin-bottom: 20px; text-align: left; }
+
+        label { display: block; margin-bottom: 8px; color: #666; font-size: 0.9em; }
+
+        input {
+            width: 100%; padding: 12px;
+            border: 2px solid #e0e0e0; border-radius: 8px;
+            font-size: 16px; transition: border-color 0.3s;
+        }
+        input:focus { outline: none; border-color: #667eea; }
+
+        .btn {
+            width: 100%; padding: 12px;
+            border-radius: 25px;
+            font-size: 16px; cursor: pointer; margin-bottom: 15px;
+            transition: transform 0.1s;
+        }
+        .btn:active { transform: scale(0.98); }
+
+        .btn-primary { background-color: #333; color: white; border: none; }
+        .btn-outline {
+            background-color: white; color: #333;
+            border: 2px solid #333; text-decoration: none; display: inline-block;
+        }
+
+        .error-msg { color: #ff4757; margin-bottom: 15px; font-size: 0.9em; }
+    </style>
+</head>
+<body>
+
+    <div class="login-card">
+        <div class="logo-circle">
+            <img src="{% static 'chat/images/logo.png' %}" alt="Logo">
+        </div>
+
+        {% if error %}
+            <div class="error-msg">{{ error }}</div>
+        {% endif %}
+
+        <form method="POST" action="">
+            {% csrf_token %}
+            <div class="form-group">
+                <label>账号：</label>
+                <input type="text" name="username" placeholder="请输入用户名" required>
+            </div>
+            <div class="form-group">
+                <label>密码：</label>
+                <input type="password" name="password" placeholder="请输入密码" required>
+            </div>
+            <button type="submit" class="btn btn-primary">登 录</button>
+        </form>
+
+        <a href="{% url 'register' %}" class="btn btn-outline">注 册</a>
+    </div>
+
+</body>
+</html>

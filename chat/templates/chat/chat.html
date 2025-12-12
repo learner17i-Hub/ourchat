@@ -1,0 +1,326 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ active_room.name }}</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { font-family: 'Segoe UI', sans-serif; height: 100vh; display: flex; overflow: hidden; }
+
+        /* --- 左侧侧边栏 --- */
+        .sidebar {
+            width: 280px; background: #f5f7fa; border-right: 1px solid #ddd;
+            display: flex; flex-direction: column;
+        }
+
+        .sidebar-header { padding: 20px; border-bottom: 1px solid #ddd; }
+        .search-box {
+            width: 100%; padding: 10px; border-radius: 20px; border: 1px solid #ccc;
+            outline: none; background: white;
+        }
+
+        .room-list { flex: 1; overflow-y: auto; }
+
+        .room-item {
+            padding: 15px 20px; border-bottom: 1px solid #eee; cursor: pointer;
+            transition: background 0.2s; color: #333; text-decoration: none; display: block;
+        }
+        .room-item:hover { background: #e6e9ef; }
+
+        /* 选中状态：蓝色背景，白色文字 */
+        .room-item.active { background: #0088cc; color: white; }
+        .room-item.active .room-last-msg { color: #e0e0e0; }
+
+        .room-name { font-weight: bold; font-size: 16px; margin-bottom: 5px; }
+        .room-last-msg { font-size: 13px; color: #888; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;}
+
+        /* --- 右侧聊天主区域 --- */
+        .chat-area { flex: 1; display: flex; flex-direction: column; background: white; }
+
+        .chat-header {
+            padding: 15px 20px; border-bottom: 1px solid #eee;
+            display: flex; justify-content: space-between; align-items: center;
+            background: white; z-index: 10;
+        }
+        .header-title { font-size: 18px; font-weight: bold; }
+        .header-info { font-size: 14px; color: #888; }
+        .back-to-lobby { text-decoration: none; color: #0088cc; font-size: 14px; }
+
+        /* 消息列表区 */
+        .messages-box {
+            flex: 1; padding: 20px; overflow-y: auto; background: #fff;
+            display: flex; flex-direction: column; gap: 15px;
+        }
+
+        /* 消息气泡通用样式 */
+        .message-wrapper { display: flex; flex-direction: column; max-width: 70%; }
+        .message-info { font-size: 12px; color: #999; margin-bottom: 4px; }
+        .message-bubble {
+            padding: 10px 15px; border-radius: 10px; font-size: 15px; line-height: 1.5;
+            position: relative; word-wrap: break-word;
+            border: 2px solid #000; /* 你的设计图风格：黑色边框 */
+        }
+        .message-time { font-size: 11px; color: #aaa; text-align: right; margin-top: 5px; }
+
+        /* 别人的消息 (左侧) */
+        .message-left { align-self: flex-start; }
+        .message-left .message-bubble {
+            background: white; color: #333;
+            border-top-left-radius: 0; /* 气泡尖角 */
+        }
+
+        /* 我的消息 (右侧) */
+        .message-right { align-self: flex-end; align-items: flex-end; }
+        .message-right .message-bubble {
+            background: #00a8ff; color: white; /* 你的设计图：蓝色背景 */
+            border-top-right-radius: 0;
+            border: 2px solid #000;
+        }
+        .message-right .message-info { text-align: right; display: none; /* 自己发的消息通常不显示名字 */ }
+
+        /* --- 底部输入区 --- */
+        .input-area {
+            padding: 20px; border-top: 1px solid #eee; background: #f9f9f9;
+            display: flex; align-items: center; gap: 10px;
+        }
+        .attach-btn { font-size: 24px; cursor: pointer; color: #666; }
+
+        .msg-input {
+            flex: 1; padding: 12px; border-radius: 25px; border: 1px solid #ccc;
+            outline: none; font-size: 16px;
+        }
+
+        .send-btn {
+            padding: 10px 25px; background: #00a8ff; color: white;
+            border: 2px solid #000; border-radius: 8px; font-weight: bold;
+            cursor: pointer; transition: 0.2s;
+        }
+        .send-btn:hover { background: #0088cc; }
+
+    </style>
+</head>
+<body>
+
+    <div class="sidebar">
+        <div class="sidebar-header">
+            <input type="text" class="search-box" placeholder="搜索...">
+        </div>
+
+        <div class="room-list">
+            {% for room in joined_rooms %}
+            <a href="{% url 'chat_room' room.name %}"
+               class="room-item {% if room.name == active_room.name %}active{% endif %}">
+                <div class="room-name">{{ room.name }}</div>
+                <div class="room-last-msg">
+                    {% if room.messages.last %}
+                        {{ room.messages.last.sender.username }}: {{ room.messages.last.content }}
+                    {% else %}
+                        暂无消息
+                    {% endif %}
+                </div>
+            </a>
+            {% endfor %}
+
+            <a href="{% url 'lobby' %}" class="room-item" style="color:#0088cc; text-align:center;">
+                + 添加/创建新聊天室
+            </a>
+        </div>
+    </div>
+
+    <div class="chat-area">
+        <div class="chat-header">
+            <div>
+                <span class="header-title">{{ active_room.name }}</span>
+                <span class="header-info">({{ active_room.members.count }} 成员)</span>
+            </div>
+            <a href="{% url 'lobby' %}" class="back-to-lobby">返回大厅</a>
+        </div>
+
+        <div class="messages-box" id="msgBox">
+            {% for msg in messages %}
+                {% if msg.sender == user %}
+                    <div class="message-wrapper message-right">
+                        <div class="message-bubble">{{ msg.content }}</div>
+                        <div class="message-time">{{ msg.timestamp|date:"H:i" }}</div>
+                    </div>
+                {% else %}
+                    <div class="message-wrapper message-left">
+                        <div class="message-info">{{ msg.sender.username }}</div>
+                        <div class="message-bubble">{{ msg.content }}</div>
+                        <div class="message-time">{{ msg.timestamp|date:"H:i" }}</div>
+                    </div>
+                {% endif %}
+            {% endfor %}
+        </div>
+
+        <div class="input-area">
+            <div class="attach-btn">📎</div> <input type="text" class="msg-input" id="inputMsg" placeholder="输入消息..." onkeypress="handleEnter(event)">
+            <button class="send-btn" onclick="sendMessage()">发送</button>
+        </div>
+    </div>
+
+    <script>
+        // ================== 1. 基础变量与初始化 ==================
+        const msgBox = document.getElementById('msgBox');
+        const inputMsg = document.getElementById('inputMsg');
+        const roomId = "{{ active_room.id }}";
+
+        // 获取页面上已经存在的最后一条消息的ID
+        // 我们利用 Django 模板在 HTML 里埋一个隐藏的数据，或者直接从 DOM 获取
+        // 这里最简单的做法：页面加载时，把 lastMessageId 设为当前最后一条消息的ID
+        let lastMessageId = "{{ messages.last.id|default:0 }}";
+
+        // 自动滚到底部
+        function scrollToBottom() { msgBox.scrollTop = msgBox.scrollHeight; }
+        scrollToBottom();
+
+        // ================== 2. 轮询：每2秒检查一次新消息 ==================
+        setInterval(fetchNewMessages, 2000);
+
+        function fetchNewMessages() {
+            // 发送 GET 请求，带上 room_id 和 last_message_id
+            fetch(`/api/get_messages/?room_id=${roomId}&last_message_id=${lastMessageId}`)
+            .then(response => response.json())
+            .then(data => {
+                if (data.success && data.messages.length > 0) {
+                    // 如果有新消息
+                    data.messages.forEach(msg => {
+                        appendMessage(msg);
+                        // 更新 lastMessageId，这样下次就只查这一条之后的消息了
+                        lastMessageId = msg.id;
+                    });
+                    // 有新消息才滚动
+                    scrollToBottom();
+                }
+            })
+            .catch(err => console.error("轮询出错:", err)); // 安静地失败，不要弹窗打扰用户
+        }
+
+        // 把消息画在界面上
+        function appendMessage(msg) {
+            let html = '';
+            if (msg.is_my_msg) {
+                // 我的消息 (右边)
+                html = `
+                    <div class="message-wrapper message-right">
+                        <div class="message-bubble">${msg.content}</div>
+                        <div class="message-time">${msg.timestamp}</div>
+                    </div>`;
+            } else {
+                // 别人的消息 (左边)
+                html = `
+                    <div class="message-wrapper message-left">
+                        <div class="message-info">${msg.sender}</div>
+                        <div class="message-bubble">${msg.content}</div>
+                        <div class="message-time">${msg.timestamp}</div>
+                    </div>`;
+            }
+            msgBox.insertAdjacentHTML('beforeend', html);
+        }
+
+        // ================== 3. 发送消息逻辑 ==================
+        function handleEnter(e) { if (e.key === 'Enter') sendMessage(); }
+
+        function sendMessage() {
+            const content = inputMsg.value.trim();
+            if (!content) return;
+
+            fetch('{% url "send_message" %}', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'X-CSRFToken': '{{ csrf_token }}' },
+                body: JSON.stringify({ room_id: roomId, content: content })
+            })
+            .then(res => res.json())
+            .then(data => {
+                if (data.success) {
+                    // 发送成功后，不需要手动 appendMessage 了！
+                    // 因为我们的轮询机制会在2秒内自动把它拉回来。
+                    // 但为了体验更“极速”，我们可以手动先画上去，或者就等轮询。
+                    // 为了防止消息重复显示（手动画一次，轮询又拉一次），
+                    // 最简单的策略是：发送成功后，直接更新 lastMessageId 为后端返回的 ID (如果后端返回了的话)
+                    // 或者：发送成功后不清空 lastMessageId，让轮询去处理显示。
+
+                    // 这里我们采用：为了即时反馈，手动画出“我的消息”，
+                    // 但这里有个小坑：如果轮询快于手动画，或者手动画了轮询又拉到了，就会重复。
+                    // ⭐️ 最佳实践（轮询模式下）：
+                    // 发送成功后 -> 清空输入框 -> 手动追加 -> 并临时标记这条消息ID，防止轮询重复。
+                    // 但为了代码简单，我们这样做：
+                    // 发送成功后 -> 清空输入框 -> 这里不手动追加 HTML，而是立即调用一次 fetchNewMessages()！
+
+                    inputMsg.value = '';
+                    fetchNewMessages(); // 立即触发一次拉取，不用等2秒
+                } else {
+                    alert('发送失败: ' + data.error);
+                }
+            });
+        }
+
+        // ================== 4. 弹窗与菜单逻辑 (保持不变) ==================
+        function toggleDropdown() {
+            const menu = document.getElementById('plusMenu');
+            menu.style.display = (menu.style.display === 'flex') ? 'none' : 'flex';
+        }
+        document.addEventListener('click', function(e) {
+            if (!e.target.closest('.sidebar-header')) {
+                document.getElementById('plusMenu').style.display = 'none';
+            }
+        });
+
+        function openCreateModal() { document.getElementById('createRoomModal').style.display = 'flex'; }
+        function openJoinModal() { document.getElementById('joinRoomModal').style.display = 'flex'; }
+        function closeModal(id) { document.getElementById(id).style.display = 'none'; }
+
+        // 创建表单提交
+        document.getElementById('createRoomForm').addEventListener('submit', function(e) {
+            e.preventDefault();
+            const name = document.getElementById('c_name').value;
+            const pwd = document.getElementById('c_pwd').value;
+            const confirm = document.getElementById('c_confirm').value;
+
+            if (pwd !== confirm) {
+                document.getElementById('createError').innerText = '密码不一致';
+                document.getElementById('createError').style.display = 'block';
+                return;
+            }
+            // ... AJAX create logic ...
+            fetch('{% url "create_room" %}', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'X-Requested-With': 'XMLHttpRequest', 'X-CSRFToken': '{{ csrf_token }}' },
+                body: JSON.stringify({ name: name, password: pwd, confirm_password: confirm })
+            })
+            .then(res => res.json())
+            .then(data => {
+                if (data.success) window.location.href = '/chat/' + data.room_name + '/';
+                else {
+                    const box = document.getElementById('createError');
+                    box.innerText = data.error; box.style.display = 'block';
+                }
+            });
+        });
+
+        // 加入表单提交
+        document.getElementById('joinRoomForm').addEventListener('submit', function(e) {
+            e.preventDefault();
+            const name = document.getElementById('j_name').value;
+            const pwd = document.getElementById('j_pwd').value;
+
+            // ... AJAX join logic ...
+            fetch('{% url "join_room" %}', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'X-Requested-With': 'XMLHttpRequest', 'X-CSRFToken': '{{ csrf_token }}' },
+                body: JSON.stringify({ room_name: name, password: pwd })
+            })
+            .then(res => res.json())
+            .then(data => {
+                if (data.success) window.location.href = '/chat/' + data.room_name + '/';
+                else {
+                    const box = document.getElementById('joinError');
+                    box.innerText = data.error; box.style.display = 'block';
+                }
+            });
+        });
+    </script>
+</body>
+</html>

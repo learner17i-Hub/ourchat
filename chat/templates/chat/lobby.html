@@ -1,0 +1,291 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>大厅 - 聊天室</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: #f5f7fa;
+            height: 100vh;
+            display: flex; flex-direction: column;
+        }
+
+        /* --- 导航栏 --- */
+        .navbar {
+            display: flex; justify-content: space-between; align-items: center;
+            padding: 20px 40px; background: white; box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+        }
+        .user-info { font-size: 18px; font-weight: bold; color: #333; }
+        .logout-btn { font-size: 14px; color: #ff4757; margin-left: 10px; text-decoration: none; }
+        .settings-icon { font-size: 24px; cursor: pointer; color: #333; }
+
+        /* --- 主内容区 --- */
+        .main-container {
+            flex: 1; display: flex; flex-direction: column; justify-content: center; align-items: center;
+        }
+        .welcome-title { font-size: 36px; margin-bottom: 60px; color: #333; letter-spacing: 2px; }
+
+        /* 卡片容器 */
+        .cards-wrapper { display: flex; gap: 40px; flex-wrap: wrap; justify-content: center; }
+
+        /* 功能卡片 */
+        .action-card {
+            background: white; width: 260px; height: 320px; border-radius: 20px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.08);
+            display: flex; flex-direction: column; justify-content: center; align-items: center;
+            text-decoration: none; color: #333; cursor: pointer; /* 变成手型 */
+            transition: transform 0.3s, box-shadow 0.3s;
+            border: 2px solid transparent;
+        }
+        .action-card:hover {
+            transform: translateY(-10px); box-shadow: 0 20px 40px rgba(0,0,0,0.15); border-color: #667eea;
+        }
+        .card-img-circle {
+            width: 100px; height: 100px; border-radius: 50%; border: 2px solid #333;
+            display: flex; justify-content: center; align-items: center; margin-bottom: 30px;
+            font-size: 14px; color: #ff4757;
+        }
+        .card-text { font-size: 20px; font-weight: bold; }
+
+
+        /* --- 弹窗样式 (Modal) --- */
+        .modal-overlay {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.5); /* 半透明遮罩 */
+            display: none; /* 默认隐藏 */
+            justify-content: center; align-items: center;
+            z-index: 1000;
+            backdrop-filter: blur(5px); /* 背景模糊效果 */
+        }
+
+        .modal-box {
+            background: white; width: 90%; max-width: 450px;
+            padding: 40px; border-radius: 20px;
+            box-shadow: 0 20px 50px rgba(0,0,0,0.3);
+            text-align: center;
+            border: 2px solid #333; /* 你的黑边框设计 */
+            animation: popIn 0.3s ease;
+            position: relative;
+        }
+
+        /* 关闭按钮 X */
+        .close-btn {
+            position: absolute; top: 15px; right: 20px;
+            font-size: 24px; cursor: pointer; color: #999;
+        }
+        .close-btn:hover { color: #333; }
+
+        .modal-title { font-size: 24px; margin-bottom: 30px; color: #333; }
+
+        /* 表单样式 (复用你创建房间的设计) */
+        .form-group { margin-bottom: 20px; display: flex; align-items: center; }
+        .form-label { width: 100px; text-align: right; margin-right: 15px; font-weight: bold; color: #333; }
+        .form-input {
+            flex: 1; padding: 10px 15px;
+            border: 2px solid #333; border-radius: 25px; /* 圆角 */
+            font-size: 16px; outline: none;
+        }
+        .form-input:focus { border-color: #667eea; }
+
+        .btn-submit {
+            margin-top: 20px; padding: 12px 40px;
+            background: white; color: #333; border: 2px solid #333; border-radius: 25px;
+            font-size: 16px; font-weight: bold; cursor: pointer; transition: 0.2s;
+        }
+        .btn-submit:hover { background: #333; color: white; }
+
+        .error-msg {
+            color: white; background: #ff4757; padding: 10px;
+            border-radius: 8px; margin-bottom: 20px; font-size: 0.9em;
+            display: none; /* 默认隐藏 */
+        }
+
+    </style>
+</head>
+<body>
+
+    <div class="navbar">
+        <div class="user-info">
+            用户: {{ user.username }}
+            <a href="{% url 'logout' %}" class="logout-btn">[退出]</a>
+        </div>
+        <div class="settings-icon">⚙️</div>
+    </div>
+
+    <div class="main-container">
+        <h1 class="welcome-title">欢迎 {{ user.username }}</h1>
+
+        <div class="cards-wrapper">
+            <div class="action-card" onclick="openJoinModal()">
+                <div class="card-img-circle">图片</div>
+                <span class="card-text">加入聊天室</span>
+            </div>
+
+            <div class="action-card" onclick="openCreateModal()">
+                <div class="card-img-circle">图片</div>
+                <span class="card-text">创建聊天室</span>
+            </div>
+
+            <a href="/admin/" target="_blank" class="action-card">
+                <div class="card-img-circle">图片</div>
+                <span class="card-text">管理聊天室</span>
+            </a>
+        </div>
+    </div>
+
+    <div class="modal-overlay" id="joinRoomModal">
+        <div class="modal-box">
+            <span class="close-btn" onclick="closeJoinModal()">&times;</span>
+            <h2 class="modal-title">加入聊天室</h2>
+
+            <div id="joinError" class="error-msg"></div>
+
+            <form id="joinRoomForm">
+                <div class="form-group">
+                    <label class="form-label">聊天室名称：</label>
+                    <input type="text" id="j_room_name" class="form-input" placeholder="请输入准确的房间名" required>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">加入密码：</label>
+                    <input type="password" id="j_pwd" class="form-input" placeholder="无密码则留空">
+                </div>
+
+                <button type="submit" class="btn-submit">加入聊天室</button>
+            </form>
+        </div>
+    </div>
+
+    <div class="modal-overlay" id="createRoomModal">
+        <div class="modal-box">
+            <span class="close-btn" onclick="closeCreateModal()">&times;</span>
+            <h2 class="modal-title">创建聊天室</h2>
+
+            <div id="modalError" class="error-msg"></div>
+
+            <form id="createRoomForm">
+                <div class="form-group">
+                    <label class="form-label">名称：</label>
+                    <input type="text" id="r_name" class="form-input" required>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">密码：</label>
+                    <input type="password" id="r_pwd" class="form-input" placeholder="为空则公开">
+                </div>
+                <div class="form-group">
+                    <label class="form-label">确认：</label>
+                    <input type="password" id="r_confirm" class="form-input">
+                </div>
+
+                <button type="submit" class="btn-submit">立即创建</button>
+            </form>
+        </div>
+    </div>
+
+    <script>
+        // ================= 通用逻辑 =================
+        function showError(elementId, msg) {
+            const box = document.getElementById(elementId);
+            box.innerText = msg;
+            box.style.display = 'block';
+        }
+
+        // 点击窗口外部关闭弹窗
+        window.onclick = function(event) {
+            const createModal = document.getElementById('createRoomModal');
+            const joinModal = document.getElementById('joinRoomModal');
+            if (event.target == createModal) createModal.style.display = 'none';
+            if (event.target == joinModal) joinModal.style.display = 'none';
+        }
+
+        // ================= 创建聊天室逻辑 =================
+        const createModal = document.getElementById('createRoomModal');
+
+        function openCreateModal() {
+            createModal.style.display = 'flex';
+            document.getElementById('modalError').style.display = 'none';
+            document.getElementById('createRoomForm').reset();
+        }
+
+        function closeCreateModal() {
+            createModal.style.display = 'none';
+        }
+
+        document.getElementById('createRoomForm').addEventListener('submit', function(e) {
+            e.preventDefault();
+
+            const name = document.getElementById('r_name').value;
+            const pwd = document.getElementById('r_pwd').value;
+            const confirm = document.getElementById('r_confirm').value;
+
+            if (pwd !== confirm) {
+                showError('modalError', '两次输入的密码不一致');
+                return;
+            }
+
+            fetch('{% url "create_room" %}', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-Requested-With': 'XMLHttpRequest',
+                    'X-CSRFToken': '{{ csrf_token }}'
+                },
+                body: JSON.stringify({ name: name, password: pwd, confirm_password: confirm })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    // ✅ 核心修改：创建成功后，直接跳转到聊天页面
+                    window.location.href = '/chat/' + data.room_name + '/';
+                } else {
+                    showError('modalError', data.error);
+                }
+            })
+            .catch(err => showError('modalError', '网络错误'));
+        });
+
+        // ================= 加入聊天室逻辑 =================
+        const joinModal = document.getElementById('joinRoomModal');
+
+        function openJoinModal() {
+            joinModal.style.display = 'flex';
+            document.getElementById('joinError').style.display = 'none';
+            document.getElementById('joinRoomForm').reset();
+        }
+
+        function closeJoinModal() {
+            joinModal.style.display = 'none';
+        }
+
+        document.getElementById('joinRoomForm').addEventListener('submit', function(e) {
+            e.preventDefault();
+
+            const roomName = document.getElementById('j_room_name').value;
+            const pwd = document.getElementById('j_pwd').value;
+
+            fetch('{% url "join_room" %}', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-Requested-With': 'XMLHttpRequest',
+                    'X-CSRFToken': '{{ csrf_token }}'
+                },
+                body: JSON.stringify({ room_name: roomName, password: pwd })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    // ✅ 核心修改：加入成功后，直接跳转到聊天页面
+                    window.location.href = '/chat/' + data.room_name + '/';
+                } else {
+                    showError('joinError', '⚠️ ' + data.error);
+                }
+            })
+            .catch(err => showError('joinError', '⚠️ 网络错误'));
+        });
+    </script>
+</body>
+</html>
