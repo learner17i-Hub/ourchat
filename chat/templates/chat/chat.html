@@ -139,14 +139,20 @@
         </div>
 
         <div class="messages-box" id="msgBox">
+            {% if has_more %}
+                <div id="historyBtn" class="history-btn" onclick="loadHistory()">
+                    ▲ 点击加载更多历史消息
+                </div>
+            {% endif %}
+
             {% for msg in messages %}
                 {% if msg.sender == user %}
-                    <div class="message-wrapper message-right">
+                    <div class="message-wrapper message-right" data-msg-id="{{ msg.id }}">
                         <div class="message-bubble">{{ msg.content }}</div>
                         <div class="message-time">{{ msg.timestamp|date:"H:i" }}</div>
                     </div>
                 {% else %}
-                    <div class="message-wrapper message-left">
+                    <div class="message-wrapper message-left" data-msg-id="{{ msg.id }}">
                         <div class="message-info">{{ msg.sender.username }}</div>
                         <div class="message-bubble">{{ msg.content }}</div>
                         <div class="message-time">{{ msg.timestamp|date:"H:i" }}</div>
@@ -321,6 +327,71 @@
                 }
             });
         });
+
+        function loadHistory() {
+            // 获取当前显示的最上面一条消息的 ID
+            const firstMsgEl = document.querySelector('.message-wrapper');
+            if (!firstMsgEl) return;
+
+            const firstId = firstMsgEl.getAttribute('data-msg-id');
+            const btn = document.getElementById('historyBtn');
+
+            // 1. 改变按钮状态，防止重复点击
+            const originalText = btn.innerText;
+            btn.innerText = '加载中...';
+            btn.style.pointerEvents = 'none'; // 暂时禁用点击
+
+            // 2. 发起请求
+            fetch(`/api/get_history/?room_id=${roomId}&first_msg_id=${firstId}`)
+            .then(res => res.json())
+            .then(data => {
+                if (data.success) {
+                    // 如果有消息返回，插入到 DOM
+                    if (data.messages.length > 0) {
+                        let html = '';
+                        data.messages.forEach(msg => {
+                            // 根据是否是自己的消息拼接 HTML
+                            if (msg.is_my_msg) {
+                                html += `
+                                    <div class="message-wrapper message-right" data-msg-id="${msg.id}">
+                                        <div class="message-bubble">${msg.content}</div>
+                                        <div class="message-time">${msg.timestamp}</div>
+                                    </div>`;
+                            } else {
+                                html += `
+                                    <div class="message-wrapper message-left" data-msg-id="${msg.id}">
+                                        <div class="message-info">${msg.sender}</div>
+                                        <div class="message-bubble">${msg.content}</div>
+                                        <div class="message-time">${msg.timestamp}</div>
+                                    </div>`;
+                            }
+                        });
+
+                        // 插入到按钮的后面
+                        btn.insertAdjacentHTML('afterend', html);
+                    }
+
+                    // 3. 根据后端 has_more 字段决定按钮去留
+                    if (data.has_more) {
+                        btn.innerText = '▲ 点击加载更多历史消息';
+                        btn.style.pointerEvents = 'auto'; // 恢复点击
+                    } else {
+                        btn.innerText = '已显示所有历史消息';
+                        btn.style.cursor = 'default';
+                        // 1秒后淡出移除
+                        setTimeout(() => btn.remove(), 1000);
+                    }
+                } else {
+                    btn.innerText = '加载失败，请重试';
+                    btn.style.pointerEvents = 'auto';
+                }
+            })
+            .catch(err => {
+                console.error(err);
+                btn.innerText = '网络错误';
+                btn.style.pointerEvents = 'auto';
+            });
+        }
     </script>
 </body>
 </html>

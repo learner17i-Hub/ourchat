@@ -201,14 +201,26 @@ def chat_view(request, room_name=None):
         return redirect('lobby')
 
     # 获取该房间的历史消息 (时间正序)
-    messages = active_room.messages.all().order_by('timestamp')
+        # 1. 获取该房间的消息总数
+    total_count = active_room.messages.count()
+
+    # 2. 只取最后 10 条消息 (初始显示)
+    # 先倒序取前10，再反转回正序
+    recent_messages = active_room.messages.order_by('-timestamp')[:10]
+    messages = reversed(recent_messages)
+
+    # 3. 只要总数超过 10 条，就显示“查看历史”按钮
+    has_more = total_count > 10
 
     context = {
-        'joined_rooms': joined_rooms,  # 左侧列表数据
-        'active_room': active_room,  # 当前房间信息
-        'messages': messages,  # 中间消息历史
-        'user': request.user  # 当前登录用户
+        'joined_rooms': joined_rooms,
+        'active_room': active_room,
+        'messages': messages,
+        'user': request.user,
+        'has_more': has_more  # 告诉前端是否显示加载按钮
     }
+    # === 修改部分结束 ===
+
     return render(request, 'chat/chat.html', context)
 
 
@@ -378,4 +390,60 @@ def kick_member(request, room_name, user_id):
         messages.success(request, f"用户 {user_to_kick.username} 已被移除")
 
     return redirect('manage_members', room_name=room_name)
+
+
+@login_required
+def get_history_messages_api(request):
+    room_id = request.GET.get('room_id')
+    first_msg_id = request.GET.get('first_msg_id')
+    limit = 50
+
+    # 1. 基础检查
+    if not room_id or not first_msg_id:
+        return JsonResponse({'success': False, 'error': '缺少参数'})
+
+    try:
+        # === 修复点：尝试把 ID 转为整数，防止前端传 "null" 或非数字导致崩溃 ===
+        try:
+            first_msg_id = int(first_msg_id)
+        except (ValueError, TypeError):
+            return JsonResponse({'success': False, 'error': '无效的消息ID'})
+
+        # 2. 查询逻辑 (保持不变)
+        previous_messages_query = Message.objects.filter(
+            room_id=room_id,
+            id__lt=first_msg_id  # 这里现在肯定是安全的整数了
+        ).order_by('-id')[:(limit + 1)]
+
+        previous_messages_list = list(previous_messages_query)
+
+        if len(previous_messages_list) > limit:
+            has_more = True
+            messages_to_return = previous_messages_list[:limit]
+        else:
+            has_more = False
+            messages_to_return = previous_messages_list
+
+        messages_to_return.reverse()
+
+        messages_data = []
+        for msg in messages_to_return:
+            messages_data.append({
+                'id': msg.id,
+                'sender': msg.sender.username,
+                'content': msg.content,
+                'timestamp': msg.timestamp.strftime("%H:%M"),
+                'is_my_msg': msg.sender == request.user
+            })
+
+        return JsonResponse({
+            'success': True,
+            'messages': messages_data,
+            'has_more': has_more
+        })
+
+    except Exception as e:
+        # 打印错误到后台终端，方便调试
+        print(f"获取历史消息报错: {e}")
+        return JsonResponse({'success': False, 'error': str(e)})
 
