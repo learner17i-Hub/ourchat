@@ -148,31 +148,64 @@
             {% for msg in messages %}
                 {% if msg.sender == user %}
                     <div class="message-wrapper message-right" data-msg-id="{{ msg.id }}">
-                        <div class="message-bubble">{{ msg.content }}</div>
+                        <div class="message-bubble">
+                            {% if msg.file %}
+                                {% if msg.file.name|lower|slice:"-3:" == "jpg" or msg.file.name|lower|slice:"-3:" == "png" or msg.file.name|lower|slice:"-4:" == "jpeg" or msg.file.name|lower|slice:"-3:" == "gif" %}
+                                    <img src="{{ msg.file.url }}" style="max-width: 200px; max-height: 200px; border-radius: 5px; margin-bottom: 5px; display:block; cursor:pointer;" onclick="window.open(this.src)">
+                                {% else %}
+                                    <div style="background: #eee; padding: 5px 10px; border-radius: 5px; margin-bottom: 5px;">
+                                        📁 <a href="{{ msg.file.url }}" target="_blank" style="text-decoration:none; color:#333;">下载文件</a>
+                                    </div>
+                                {% endif %}
+                            {% endif %}
+
+                            {% if msg.content %}
+                                <div>{{ msg.content }}</div>
+                            {% endif %}
+                        </div>
                         <div class="message-time">{{ msg.timestamp|date:"H:i" }}</div>
                     </div>
                 {% else %}
                     <div class="message-wrapper message-left" data-msg-id="{{ msg.id }}">
                         <div class="message-info">{{ msg.sender.username }}</div>
-                        <div class="message-bubble">{{ msg.content }}</div>
+                        <div class="message-bubble">
+                            {% if msg.file %}
+                                {% if msg.file.name|lower|slice:"-3:" == "jpg" or msg.file.name|lower|slice:"-3:" == "png" or msg.file.name|lower|slice:"-4:" == "jpeg" %}
+                                    <img src="{{ msg.file.url }}" style="max-width: 200px; max-height: 200px; border-radius: 5px; margin-bottom: 5px; display:block; cursor:pointer;" onclick="window.open(this.src)">
+                                {% else %}
+                                    <div style="background: #eee; padding: 5px 10px; border-radius: 5px; margin-bottom: 5px;">
+                                        📁 <a href="{{ msg.file.url }}" target="_blank" style="text-decoration:none; color:#333;">下载文件</a>
+                                    </div>
+                                {% endif %}
+                            {% endif %}
+
+                            {% if msg.content %}
+                                <div>{{ msg.content }}</div>
+                            {% endif %}
+                        </div>
                         <div class="message-time">{{ msg.timestamp|date:"H:i" }}</div>
                     </div>
                 {% endif %}
-            {% endfor %}
+                {% endfor %}
         </div>
 
         <div class="input-area">
-            <div class="attach-btn">📎</div> <input type="text" class="msg-input" id="inputMsg" placeholder="输入消息..." onkeypress="handleEnter(event)">
+            <input type="file" id="fileInput" style="display: none;">
+
+            <div class="attach-btn" onclick="document.getElementById('fileInput').click()">📎</div>
+
+            <input type="text" class="msg-input" id="inputMsg" placeholder="输入消息..." onkeypress="handleEnter(event)">
             <button class="send-btn" onclick="sendMessage()">发送</button>
         </div>
     </div>
 
-    <script>
+<script>
         // ================== 1. 基础变量与初始化 ==================
         const msgBox = document.getElementById('msgBox');
         const inputMsg = document.getElementById('inputMsg');
-        const sendBtn = document.querySelector('.send-btn'); // 获取发送按钮
+        const sendBtn = document.querySelector('.send-btn');
         const roomId = "{{ active_room.id }}";
+        const csrfToken = "{{ csrf_token }}"; // 单独提取 CSRF token 方便使用
 
         // 获取页面上已经存在的最后一条消息的ID
         let lastMessageId = parseInt("{{ last_id|default:0 }}");
@@ -182,28 +215,32 @@
 
         // 自动滚到底部
         function scrollToBottom() { msgBox.scrollTop = msgBox.scrollHeight; }
+        // 页面加载完滚到底部
         scrollToBottom();
 
-        // ================== 2. 轮询优化：加锁 + 去重 ==================
+        // 辅助函数：判断是否为图片
+        function isImage(url) {
+            if (!url) return false;
+            const extension = url.split('.').pop().toLowerCase();
+            return ['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp'].includes(extension);
+        }
+
+        // ================== 2. 轮询优化 ==================
         setInterval(fetchNewMessages, 2000);
 
         function fetchNewMessages() {
-            // 【修改1】如果上一次请求还在路上，这次就别发了，直接跳过
             if (isFetching) return;
-
-            isFetching = true; // 上锁
+            isFetching = true;
 
             fetch(`/api/get_messages/?room_id=${roomId}&last_message_id=${lastMessageId}`)
             .then(response => response.json())
             .then(data => {
                 if (data.success && data.messages.length > 0) {
                     let hasNew = false;
-
-                    // ⭐【精准修复】强制按 msg.id 从小到大排序
+                    // 强制按 ID 排序
                     data.messages
                         .sort((a, b) => a.id - b.id)
                         .forEach(msg => {
-
                             if (appendMessage(msg)) {
                                 hasNew = true;
                                 if (msg.id > lastMessageId) {
@@ -211,81 +248,102 @@
                                 }
                             }
                         });
-
                     if (hasNew) scrollToBottom();
                 }
             })
-
             .catch(err => console.error("轮询出错:", err))
             .finally(() => {
-                // 【修改2】无论成功失败，请求结束了才解锁
                 isFetching = false;
             });
         }
 
-        // 把消息画在界面上
+        // ================== 3. 渲染消息函数 (整合版) ==================
         function appendMessage(msg) {
-            // 【修改3 - 核心去重】如果页面上已经有这个ID的消息，直接忽略！
-            // 这一步能彻底解决高延迟下的重复显示问题
+            // 核心去重：如果页面上已经有这个ID的消息，直接忽略
             if (document.querySelector(`.message-wrapper[data-msg-id="${msg.id}"]`)) {
-                return false; // 返回 false 表示没有添加新DOM
+                return false;
+            }
+
+            // 1. 生成内容 HTML (图片/文件/文字)
+            let contentHtml = '';
+
+            // 如果有文件
+            if (msg.file_url) {
+                if (isImage(msg.file_url)) {
+                    // 是图片：显示缩略图
+                    contentHtml += `<img src="${msg.file_url}" style="max-width: 200px; max-height: 200px; border-radius: 5px; margin-bottom: 5px; display:block; cursor:pointer;" onclick="window.open(this.src)">`;
+                } else {
+                    // 是文件：显示下载链接
+                    contentHtml += `<div style="background: #eee; padding: 5px 10px; border-radius: 5px; margin-bottom: 5px;">
+                                        📁 <a href="${msg.file_url}" target="_blank" style="text-decoration:none; color:#333;">${msg.file_name || '下载文件'}</a>
+                                    </div>`;
+                }
+            }
+
+            // 如果有文字
+            if (msg.content) {
+                contentHtml += `<div>${msg.content}</div>`;
             }
 
             let html = '';
             if (msg.is_my_msg) {
                 html = `
                     <div class="message-wrapper message-right" data-msg-id="${msg.id}">
-                        <div class="message-bubble">${msg.content}</div>
+                        <div class="message-bubble">${contentHtml}</div>
                         <div class="message-time">${msg.timestamp}</div>
                     </div>`;
             } else {
                 html = `
                     <div class="message-wrapper message-left" data-msg-id="${msg.id}">
                         <div class="message-info">${msg.sender}</div>
-                        <div class="message-bubble">${msg.content}</div>
+                        <div class="message-bubble">${contentHtml}</div>
                         <div class="message-time">${msg.timestamp}</div>
                     </div>`;
             }
+            // 插入到列表末尾
             msgBox.insertAdjacentHTML('beforeend', html);
-            return true; // 返回 true 表示添加成功
+            return true;
         }
 
-        // ================== 3. 发送消息逻辑优化 ==================
+        // ================== 4. 发送消息逻辑 ==================
         function handleEnter(e) { if (e.key === 'Enter') sendMessage(); }
 
         function sendMessage() {
             const content = inputMsg.value.trim();
-            if (!content) return;
+            const fileInput = document.getElementById('fileInput');
+            const file = fileInput.files[0];
+
+            if (!content && !file) return;
 
             sendBtn.disabled = true;
             sendBtn.innerText = '发送中...';
             inputMsg.disabled = true;
 
+            const formData = new FormData();
+            formData.append('room_id', roomId);
+            formData.append('content', content);
+            if (file) {
+                formData.append('file', file);
+            }
+
             fetch('{% url "send_message" %}', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json', 'X-CSRFToken': '{{ csrf_token }}' },
-                body: JSON.stringify({ room_id: roomId, content: content })
+                headers: { 'X-CSRFToken': csrfToken },
+                body: formData
             })
             .then(res => res.json())
             .then(data => {
                 if (data.success) {
                     inputMsg.value = '';
-
-                    // ————【删掉这几行】————
-                    // if (data.id > lastMessageId) {
-                    //      lastMessageId = data.id;
-                    // }
-                    // ————————————————————
-
-                    // 直接拉取，它会用旧的ID去查，就能查到你刚发的这条新消息了
-                    fetchNewMessages();
+                    fileInput.value = '';
+                    fetchNewMessages(); // 立即拉取新消息
                 } else {
                     alert('发送失败: ' + data.error);
                 }
             })
             .catch(err => {
                 console.error(err);
-                alert('网络错误，请稍后重试');
+                alert('网络错误');
             })
             .finally(() => {
                 sendBtn.disabled = false;
@@ -295,92 +353,16 @@
             });
         }
 
-        // ================== 4. 弹窗与菜单逻辑 (保持不变) ==================
-        function toggleDropdown() {
-            const menu = document.getElementById('plusMenu');
-            // 注意：原代码里没有 plusMenu 的 HTML，这里保持你的原逻辑
-            if (menu) menu.style.display = (menu.style.display === 'flex') ? 'none' : 'flex';
-        }
-        document.addEventListener('click', function(e) {
-            // 注意：原代码 sidebar-header 里没有 toggle 按钮，可能是在 header-title 附近
-            // 这里为了稳妥，保留你的原始监听逻辑，如果有错请检查 HTML ID
-            if (!e.target.closest('.sidebar-header') && document.getElementById('plusMenu')) {
-                document.getElementById('plusMenu').style.display = 'none';
-            }
-        });
-
-        function openCreateModal() {
-            const el = document.getElementById('createRoomModal');
-            if(el) el.style.display = 'flex';
-        }
-        function openJoinModal() {
-            const el = document.getElementById('joinRoomModal');
-            if(el) el.style.display = 'flex';
-        }
-        function closeModal(id) {
-            const el = document.getElementById(id);
-            if(el) el.style.display = 'none';
-        }
-
-        // 创建表单提交
-        const createForm = document.getElementById('createRoomForm');
-        if (createForm) {
-            createForm.addEventListener('submit', function(e) {
-                e.preventDefault();
-                const name = document.getElementById('c_name').value;
-                const pwd = document.getElementById('c_pwd').value;
-                const confirm = document.getElementById('c_confirm').value;
-
-                if (pwd !== confirm) {
-                    document.getElementById('createError').innerText = '密码不一致';
-                    document.getElementById('createError').style.display = 'block';
-                    return;
-                }
-                fetch('{% url "create_room" %}', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json', 'X-Requested-With': 'XMLHttpRequest', 'X-CSRFToken': '{{ csrf_token }}' },
-                    body: JSON.stringify({ name: name, password: pwd, confirm_password: confirm })
-                })
-                .then(res => res.json())
-                .then(data => {
-                    if (data.success) window.location.href = '/chat/' + data.room_name + '/';
-                    else {
-                        const box = document.getElementById('createError');
-                        box.innerText = data.error; box.style.display = 'block';
-                    }
-                });
-            });
-        }
-
-        // 加入表单提交
-        const joinForm = document.getElementById('joinRoomForm');
-        if (joinForm) {
-            joinForm.addEventListener('submit', function(e) {
-                e.preventDefault();
-                const name = document.getElementById('j_name').value;
-                const pwd = document.getElementById('j_pwd').value;
-
-                fetch('{% url "join_room" %}', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json', 'X-Requested-With': 'XMLHttpRequest', 'X-CSRFToken': '{{ csrf_token }}' },
-                    body: JSON.stringify({ room_name: name, password: pwd })
-                })
-                .then(res => res.json())
-                .then(data => {
-                    if (data.success) window.location.href = '/chat/' + data.room_name + '/';
-                    else {
-                        const box = document.getElementById('joinError');
-                        box.innerText = data.error; box.style.display = 'block';
-                    }
-                });
-            });
-        }
+        // ================== 5. 加载历史记录 (已修复) ==================
         function loadHistory() {
             const firstMsgEl = document.querySelector('.message-wrapper');
             if (!firstMsgEl) return;
 
+            // 修复点：这里只声明一次
             const firstId = firstMsgEl.getAttribute('data-msg-id');
             const btn = document.getElementById('historyBtn');
+
+            if(!btn) return; // 安全检查
 
             const originalText = btn.innerText;
             btn.innerText = '加载中...';
@@ -391,35 +373,48 @@
             .then(data => {
                 if (data.success) {
                     if (data.messages.length > 0) {
-                        // 【核心修复】强制按 ID 升序排列（旧 -> 新），防止后端乱序
-                        // 这样无论后端返回什么顺序，前端都能保证拼出正确的 HTML
                         const sortedMessages = data.messages.sort((a, b) => a.id - b.id);
-
                         let html = '';
+
                         sortedMessages.forEach(msg => {
-                            // 去重
                             if (document.querySelector(`.message-wrapper[data-msg-id="${msg.id}"]`)) return;
 
+                            // === 构建内容 HTML (复用逻辑) ===
+                            let contentHtml = '';
+                            if (msg.file_url) {
+                                if (isImage(msg.file_url)) {
+                                    contentHtml += `<img src="${msg.file_url}" style="max-width: 200px; max-height: 200px; border-radius: 5px; margin-bottom: 5px; display:block; cursor:pointer;" onclick="window.open(this.src)">`;
+                                } else {
+                                    contentHtml += `<div style="background: #eee; padding: 5px 10px; border-radius: 5px; margin-bottom: 5px;">
+                                        📁 <a href="${msg.file_url}" target="_blank" style="text-decoration:none; color:#333;">${msg.file_name || '下载文件'}</a>
+                                    </div>`;
+                                }
+                            }
+                            if (msg.content) {
+                                contentHtml += `<div>${msg.content}</div>`;
+                            }
+
+                            // 拼接气泡 HTML
                             if (msg.is_my_msg) {
                                 html += `
                                     <div class="message-wrapper message-right" data-msg-id="${msg.id}">
-                                        <div class="message-bubble">${msg.content}</div>
+                                        <div class="message-bubble">${contentHtml}</div>
                                         <div class="message-time">${msg.timestamp}</div>
                                     </div>`;
                             } else {
                                 html += `
                                     <div class="message-wrapper message-left" data-msg-id="${msg.id}">
                                         <div class="message-info">${msg.sender}</div>
-                                        <div class="message-bubble">${msg.content}</div>
+                                        <div class="message-bubble">${contentHtml}</div>
                                         <div class="message-time">${msg.timestamp}</div>
                                     </div>`;
                             }
                         });
-                        // 插入到按钮的后面
+
+                        // 插入到顶部
                         msgBox.insertAdjacentHTML('afterbegin', html);
                     }
 
-                    // ... 保持原有逻辑不变 ...
                     if (data.has_more) {
                         btn.innerText = '▲ 点击加载更多历史消息';
                         btn.style.pointerEvents = 'auto';
@@ -439,6 +434,75 @@
                 btn.style.pointerEvents = 'auto';
             });
         }
+
+        // ================== 6. 弹窗与菜单逻辑 (保持不变) ==================
+        function toggleDropdown() {
+            const menu = document.getElementById('plusMenu');
+            if (menu) menu.style.display = (menu.style.display === 'flex') ? 'none' : 'flex';
+        }
+        document.addEventListener('click', function(e) {
+            if (!e.target.closest('.sidebar-header') && document.getElementById('plusMenu')) {
+                document.getElementById('plusMenu').style.display = 'none';
+            }
+        });
+
+        // 绑定创建/加入房间的表单事件
+        const createForm = document.getElementById('createRoomForm');
+        if (createForm) {
+            createForm.addEventListener('submit', function(e) {
+                e.preventDefault();
+                const name = document.getElementById('c_name').value;
+                const pwd = document.getElementById('c_pwd').value;
+                const confirm = document.getElementById('c_confirm').value;
+
+                if (pwd !== confirm) {
+                    const err = document.getElementById('createError');
+                    err.innerText = '密码不一致';
+                    err.style.display = 'block';
+                    return;
+                }
+                fetch('{% url "create_room" %}', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'X-Requested-With': 'XMLHttpRequest', 'X-CSRFToken': csrfToken },
+                    body: JSON.stringify({ name: name, password: pwd, confirm_password: confirm })
+                })
+                .then(res => res.json())
+                .then(data => {
+                    if (data.success) window.location.href = '/chat/' + data.room_name + '/';
+                    else {
+                        const box = document.getElementById('createError');
+                        box.innerText = data.error; box.style.display = 'block';
+                    }
+                });
+            });
+        }
+
+        const joinForm = document.getElementById('joinRoomForm');
+        if (joinForm) {
+            joinForm.addEventListener('submit', function(e) {
+                e.preventDefault();
+                const name = document.getElementById('j_name').value;
+                const pwd = document.getElementById('j_pwd').value;
+
+                fetch('{% url "join_room" %}', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'X-Requested-With': 'XMLHttpRequest', 'X-CSRFToken': csrfToken },
+                    body: JSON.stringify({ room_name: name, password: pwd })
+                })
+                .then(res => res.json())
+                .then(data => {
+                    if (data.success) window.location.href = '/chat/' + data.room_name + '/';
+                    else {
+                        const box = document.getElementById('joinError');
+                        box.innerText = data.error; box.style.display = 'block';
+                    }
+                });
+            });
+        }
+
+        function openCreateModal() { document.getElementById('createRoomModal').style.display = 'flex'; }
+        function openJoinModal() { document.getElementById('joinRoomModal').style.display = 'flex'; }
+        function closeModal(id) { document.getElementById(id).style.display = 'none'; }
     </script>
 </body>
 </html>

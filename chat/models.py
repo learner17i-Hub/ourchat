@@ -34,11 +34,20 @@ class ChatRoom(models.Model):
 class Message(models.Model):
     room = models.ForeignKey(ChatRoom, on_delete=models.CASCADE, related_name='messages')
     sender = models.ForeignKey(User, on_delete=models.CASCADE, related_name='sent_messages')
-    content = models.TextField()
+
+    # 1. 修改 content：允许为空 (因为用户可能只发图不发字)
+    content = models.TextField(blank=True, null=True)
+
+    # 2. 新增 file 字段：用于存储图片或文件
+    # upload_to 会自动按年月日创建文件夹，避免所有文件堆在一个目录下
+    file = models.FileField(upload_to='chat_files/%Y/%m/%d/', blank=True, null=True, verbose_name="文件/图片")
+
     timestamp = models.DateTimeField(auto_now_add=True)
 
     class Meta:
         ordering = ['timestamp']
 
     def __str__(self):
-        return f"[{self.sender.username}] {self.content[:20]}"
+        # 简单处理：如果是文件，显示文件名
+        msg_preview = self.content[:20] if self.content else "[文件]"
+        return f"[{self.sender.username}] {msg_preview}"

@@ -237,30 +237,36 @@ def chat_view(request, room_name=None):
 @require_POST
 def send_message_api(request):
     try:
-        data = json.loads(request.body)
-        room_id = data.get('room_id')
-        content = data.get('content')
+        # 注意：不再使用 json.loads(request.body)
+        # 前端改用 FormData 提交后，数据在 request.POST 和 request.FILES 中
 
-        if not content:
+        room_id = request.POST.get('room_id')
+        content = request.POST.get('content', '').strip()
+        uploaded_file = request.FILES.get('file')  # 获取上传的文件
+
+        # 校验：既没文字也没文件，才算空
+        if not content and not uploaded_file:
             return JsonResponse({'success': False, 'error': '内容不能为空'})
 
         room = ChatRoom.objects.get(id=room_id)
 
-        # 存入数据库
         msg = Message.objects.create(
             room=room,
             sender=request.user,
-            content=content
+            content=content,
+            file=uploaded_file  # 保存文件
         )
 
-        # 【核心修复】必须返回 id，否则前端无法去重和排序
         return JsonResponse({
             'success': True,
-            'id': msg.id,  # <--- 添加这一行 !!!
+            'id': msg.id,
             'timestamp': msg.timestamp.strftime("%H:%M"),
-            'sender': msg.sender.username
+            'sender': msg.sender.username,
+            # 返回文件 URL 给前端 (如果有的话)
+            'file_url': msg.file.url if msg.file else None
         })
     except Exception as e:
+        print(f"Send Error: {e}")  # 打印错误方便调试
         return JsonResponse({'success': False, 'error': str(e)})
 
 
@@ -269,34 +275,32 @@ def get_messages_api(request):
     room_id = request.GET.get('room_id')
     last_message_id = request.GET.get('last_message_id', 0)
 
-    if not room_id:
-        return JsonResponse({'success': False})
+    if not room_id: return JsonResponse({'success': False})
 
     try:
-        # 【建议优化】强制转为 int，防止 dirty data
         last_message_id = int(last_message_id)
-
         new_messages = Message.objects.filter(
             room_id=room_id,
             id__gt=last_message_id
-        ).order_by('timestamp')  # 这里是对的，保持不变
+        ).order_by('timestamp')
 
         messages_list = []
         for msg in new_messages:
             messages_list.append({
                 'id': msg.id,
                 'sender': msg.sender.username,
-                'content': msg.content,
+                'content': msg.content if msg.content else "",  # 处理 None
                 'timestamp': msg.timestamp.strftime("%H:%M"),
-                'is_my_msg': msg.sender == request.user
+                'is_my_msg': msg.sender == request.user,
+                # === 新增 ===
+                'file_url': msg.file.url if msg.file else None,
+                'file_name': msg.file.name.split('/')[-1] if msg.file else ""
             })
 
         return JsonResponse({'success': True, 'messages': messages_list})
     except Exception as e:
-        # 如果转换 int 失败，或者其他错误，返回 0 条消息，不要报错崩溃
         print(f"Polling Error: {e}")
         return JsonResponse({'success': False, 'messages': []})
-
 # === 管理大厅：列出我创建的房间 ===
 @login_required
 def manage_dashboard(request):
@@ -440,9 +444,12 @@ def get_history_messages_api(request):
             messages_data.append({
                 'id': msg.id,
                 'sender': msg.sender.username,
-                'content': msg.content,
+                'content': msg.content if msg.content else "",
                 'timestamp': msg.timestamp.strftime("%H:%M"),
-                'is_my_msg': msg.sender == request.user
+                'is_my_msg': msg.sender == request.user,
+                # === 新增 ===
+                'file_url': msg.file.url if msg.file else None,
+                'file_name': msg.file.name.split('/')[-1] if msg.file else ""
             })
 
         return JsonResponse({

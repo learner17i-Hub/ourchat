@@ -11,7 +11,7 @@ https://docs.djangoproject.com/en/5.2/ref/settings/
 """
 
 from pathlib import Path
-
+import os
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
@@ -51,8 +51,9 @@ MIDDLEWARE = [
 
 CSRF_TRUSTED_ORIGINS=[
     # 每次使用时添加新的域名
-    'https://proterandrously-nonadjustable-phyllis.ngrok-free.dev'
+    'https://*.ngrok-free.dev/',
 ]
+
 ROOT_URLCONF = 'ourchat.urls'
 
 TEMPLATES = [
@@ -122,8 +123,9 @@ USE_TZ = False
 STATIC_URL = 'static/'
 STATIC_ROOT = BASE_DIR / 'staticfiles'
 # 运行python manage.py collectstatic
-# 即可手机静态图片
-
+# 即可收集静态图片
+MEDIA_URL = '/media/'
+MEDIA_ROOT = BASE_DIR / 'media'
 # Default primary key field type
 # https://docs.djangoproject.com/en/5.2/ref/settings/#default-auto-field
 
