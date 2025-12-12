@@ -171,67 +171,96 @@
         // ================== 1. 基础变量与初始化 ==================
         const msgBox = document.getElementById('msgBox');
         const inputMsg = document.getElementById('inputMsg');
+        const sendBtn = document.querySelector('.send-btn'); // 获取发送按钮
         const roomId = "{{ active_room.id }}";
 
         // 获取页面上已经存在的最后一条消息的ID
-        // 我们利用 Django 模板在 HTML 里埋一个隐藏的数据，或者直接从 DOM 获取
-        // 这里最简单的做法：页面加载时，把 lastMessageId 设为当前最后一条消息的ID
-        let lastMessageId = "{{ messages.last.id|default:0 }}";
+        let lastMessageId = parseInt("{{ last_id|default:0 }}");
+
+        // 标记位：是否正在获取消息
+        let isFetching = false;
 
         // 自动滚到底部
         function scrollToBottom() { msgBox.scrollTop = msgBox.scrollHeight; }
         scrollToBottom();
 
-        // ================== 2. 轮询：每2秒检查一次新消息 ==================
+        // ================== 2. 轮询优化：加锁 + 去重 ==================
         setInterval(fetchNewMessages, 2000);
 
         function fetchNewMessages() {
-            // 发送 GET 请求，带上 room_id 和 last_message_id
+            // 【修改1】如果上一次请求还在路上，这次就别发了，直接跳过
+            if (isFetching) return;
+
+            isFetching = true; // 上锁
+
             fetch(`/api/get_messages/?room_id=${roomId}&last_message_id=${lastMessageId}`)
             .then(response => response.json())
             .then(data => {
                 if (data.success && data.messages.length > 0) {
-                    // 如果有新消息
-                    data.messages.forEach(msg => {
-                        appendMessage(msg);
-                        // 更新 lastMessageId，这样下次就只查这一条之后的消息了
-                        lastMessageId = msg.id;
-                    });
-                    // 有新消息才滚动
-                    scrollToBottom();
+                    let hasNew = false;
+
+                    // ⭐【精准修复】强制按 msg.id 从小到大排序
+                    data.messages
+                        .sort((a, b) => a.id - b.id)
+                        .forEach(msg => {
+
+                            if (appendMessage(msg)) {
+                                hasNew = true;
+                                if (msg.id > lastMessageId) {
+                                    lastMessageId = msg.id;
+                                }
+                            }
+                        });
+
+                    if (hasNew) scrollToBottom();
                 }
             })
-            .catch(err => console.error("轮询出错:", err)); // 安静地失败，不要弹窗打扰用户
+
+            .catch(err => console.error("轮询出错:", err))
+            .finally(() => {
+                // 【修改2】无论成功失败，请求结束了才解锁
+                isFetching = false;
+            });
         }
 
         // 把消息画在界面上
         function appendMessage(msg) {
+            // 【修改3 - 核心去重】如果页面上已经有这个ID的消息，直接忽略！
+            // 这一步能彻底解决高延迟下的重复显示问题
+            if (document.querySelector(`.message-wrapper[data-msg-id="${msg.id}"]`)) {
+                return false; // 返回 false 表示没有添加新DOM
+            }
+
             let html = '';
             if (msg.is_my_msg) {
-                // 我的消息 (右边)
                 html = `
-                    <div class="message-wrapper message-right">
+                    <div class="message-wrapper message-right" data-msg-id="${msg.id}">
                         <div class="message-bubble">${msg.content}</div>
                         <div class="message-time">${msg.timestamp}</div>
                     </div>`;
             } else {
-                // 别人的消息 (左边)
                 html = `
-                    <div class="message-wrapper message-left">
+                    <div class="message-wrapper message-left" data-msg-id="${msg.id}">
                         <div class="message-info">${msg.sender}</div>
                         <div class="message-bubble">${msg.content}</div>
                         <div class="message-time">${msg.timestamp}</div>
                     </div>`;
             }
             msgBox.insertAdjacentHTML('beforeend', html);
+            return true; // 返回 true 表示添加成功
         }
 
-        // ================== 3. 发送消息逻辑 ==================
+        // ================== 3. 发送消息逻辑优化 ==================
         function handleEnter(e) { if (e.key === 'Enter') sendMessage(); }
 
         function sendMessage() {
             const content = inputMsg.value.trim();
             if (!content) return;
+
+            // 【修改4】发送时禁用按钮和输入框，防止重复点击
+            sendBtn.disabled = true;
+            sendBtn.innerText = '发送中...';
+            inputMsg.disabled = true;
 
             fetch('{% url "send_message" %}', {
                 method: 'POST',
@@ -241,116 +270,135 @@
             .then(res => res.json())
             .then(data => {
                 if (data.success) {
-                    // 发送成功后，不需要手动 appendMessage 了！
-                    // 因为我们的轮询机制会在2秒内自动把它拉回来。
-                    // 但为了体验更“极速”，我们可以手动先画上去，或者就等轮询。
-                    // 为了防止消息重复显示（手动画一次，轮询又拉一次），
-                    // 最简单的策略是：发送成功后，直接更新 lastMessageId 为后端返回的 ID (如果后端返回了的话)
-                    // 或者：发送成功后不清空 lastMessageId，让轮询去处理显示。
-
-                    // 这里我们采用：为了即时反馈，手动画出“我的消息”，
-                    // 但这里有个小坑：如果轮询快于手动画，或者手动画了轮询又拉到了，就会重复。
-                    // ⭐️ 最佳实践（轮询模式下）：
-                    // 发送成功后 -> 清空输入框 -> 手动追加 -> 并临时标记这条消息ID，防止轮询重复。
-                    // 但为了代码简单，我们这样做：
-                    // 发送成功后 -> 清空输入框 -> 这里不手动追加 HTML，而是立即调用一次 fetchNewMessages()！
-
                     inputMsg.value = '';
-                    fetchNewMessages(); // 立即触发一次拉取，不用等2秒
+                    if (data.id > lastMessageId) {
+                         lastMessageId = data.id;f
+                    }
+                    // 发送成功后立即拉取一次。
+                    // 因为我们加了去重逻辑，就算轮询也拉到了同样的消息，也不会重复显示了。
+                    fetchNewMessages();
                 } else {
                     alert('发送失败: ' + data.error);
                 }
+            })
+            .catch(err => {
+                console.error(err);
+                alert('网络错误，请稍后重试');
+            })
+            .finally(() => {
+                // 【修改5】恢复按钮状态
+                sendBtn.disabled = false;
+                sendBtn.innerText = '发送';
+                inputMsg.disabled = false;
+                inputMsg.focus();
             });
         }
 
         // ================== 4. 弹窗与菜单逻辑 (保持不变) ==================
         function toggleDropdown() {
             const menu = document.getElementById('plusMenu');
-            menu.style.display = (menu.style.display === 'flex') ? 'none' : 'flex';
+            // 注意：原代码里没有 plusMenu 的 HTML，这里保持你的原逻辑
+            if (menu) menu.style.display = (menu.style.display === 'flex') ? 'none' : 'flex';
         }
         document.addEventListener('click', function(e) {
-            if (!e.target.closest('.sidebar-header')) {
+            // 注意：原代码 sidebar-header 里没有 toggle 按钮，可能是在 header-title 附近
+            // 这里为了稳妥，保留你的原始监听逻辑，如果有错请检查 HTML ID
+            if (!e.target.closest('.sidebar-header') && document.getElementById('plusMenu')) {
                 document.getElementById('plusMenu').style.display = 'none';
             }
         });
 
-        function openCreateModal() { document.getElementById('createRoomModal').style.display = 'flex'; }
-        function openJoinModal() { document.getElementById('joinRoomModal').style.display = 'flex'; }
-        function closeModal(id) { document.getElementById(id).style.display = 'none'; }
+        function openCreateModal() {
+            const el = document.getElementById('createRoomModal');
+            if(el) el.style.display = 'flex';
+        }
+        function openJoinModal() {
+            const el = document.getElementById('joinRoomModal');
+            if(el) el.style.display = 'flex';
+        }
+        function closeModal(id) {
+            const el = document.getElementById(id);
+            if(el) el.style.display = 'none';
+        }
 
         // 创建表单提交
-        document.getElementById('createRoomForm').addEventListener('submit', function(e) {
-            e.preventDefault();
-            const name = document.getElementById('c_name').value;
-            const pwd = document.getElementById('c_pwd').value;
-            const confirm = document.getElementById('c_confirm').value;
+        const createForm = document.getElementById('createRoomForm');
+        if (createForm) {
+            createForm.addEventListener('submit', function(e) {
+                e.preventDefault();
+                const name = document.getElementById('c_name').value;
+                const pwd = document.getElementById('c_pwd').value;
+                const confirm = document.getElementById('c_confirm').value;
 
-            if (pwd !== confirm) {
-                document.getElementById('createError').innerText = '密码不一致';
-                document.getElementById('createError').style.display = 'block';
-                return;
-            }
-            // ... AJAX create logic ...
-            fetch('{% url "create_room" %}', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json', 'X-Requested-With': 'XMLHttpRequest', 'X-CSRFToken': '{{ csrf_token }}' },
-                body: JSON.stringify({ name: name, password: pwd, confirm_password: confirm })
-            })
-            .then(res => res.json())
-            .then(data => {
-                if (data.success) window.location.href = '/chat/' + data.room_name + '/';
-                else {
-                    const box = document.getElementById('createError');
-                    box.innerText = data.error; box.style.display = 'block';
+                if (pwd !== confirm) {
+                    document.getElementById('createError').innerText = '密码不一致';
+                    document.getElementById('createError').style.display = 'block';
+                    return;
                 }
+                fetch('{% url "create_room" %}', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'X-Requested-With': 'XMLHttpRequest', 'X-CSRFToken': '{{ csrf_token }}' },
+                    body: JSON.stringify({ name: name, password: pwd, confirm_password: confirm })
+                })
+                .then(res => res.json())
+                .then(data => {
+                    if (data.success) window.location.href = '/chat/' + data.room_name + '/';
+                    else {
+                        const box = document.getElementById('createError');
+                        box.innerText = data.error; box.style.display = 'block';
+                    }
+                });
             });
-        });
+        }
 
         // 加入表单提交
-        document.getElementById('joinRoomForm').addEventListener('submit', function(e) {
-            e.preventDefault();
-            const name = document.getElementById('j_name').value;
-            const pwd = document.getElementById('j_pwd').value;
+        const joinForm = document.getElementById('joinRoomForm');
+        if (joinForm) {
+            joinForm.addEventListener('submit', function(e) {
+                e.preventDefault();
+                const name = document.getElementById('j_name').value;
+                const pwd = document.getElementById('j_pwd').value;
 
-            // ... AJAX join logic ...
-            fetch('{% url "join_room" %}', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json', 'X-Requested-With': 'XMLHttpRequest', 'X-CSRFToken': '{{ csrf_token }}' },
-                body: JSON.stringify({ room_name: name, password: pwd })
-            })
-            .then(res => res.json())
-            .then(data => {
-                if (data.success) window.location.href = '/chat/' + data.room_name + '/';
-                else {
-                    const box = document.getElementById('joinError');
-                    box.innerText = data.error; box.style.display = 'block';
-                }
+                fetch('{% url "join_room" %}', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'X-Requested-With': 'XMLHttpRequest', 'X-CSRFToken': '{{ csrf_token }}' },
+                    body: JSON.stringify({ room_name: name, password: pwd })
+                })
+                .then(res => res.json())
+                .then(data => {
+                    if (data.success) window.location.href = '/chat/' + data.room_name + '/';
+                    else {
+                        const box = document.getElementById('joinError');
+                        box.innerText = data.error; box.style.display = 'block';
+                    }
+                });
             });
-        });
-
+        }
         function loadHistory() {
-            // 获取当前显示的最上面一条消息的 ID
             const firstMsgEl = document.querySelector('.message-wrapper');
             if (!firstMsgEl) return;
 
             const firstId = firstMsgEl.getAttribute('data-msg-id');
             const btn = document.getElementById('historyBtn');
 
-            // 1. 改变按钮状态，防止重复点击
             const originalText = btn.innerText;
             btn.innerText = '加载中...';
-            btn.style.pointerEvents = 'none'; // 暂时禁用点击
+            btn.style.pointerEvents = 'none';
 
-            // 2. 发起请求
             fetch(`/api/get_history/?room_id=${roomId}&first_msg_id=${firstId}`)
             .then(res => res.json())
             .then(data => {
                 if (data.success) {
-                    // 如果有消息返回，插入到 DOM
                     if (data.messages.length > 0) {
+                        // 【核心修复】强制按 ID 升序排列（旧 -> 新），防止后端乱序
+                        // 这样无论后端返回什么顺序，前端都能保证拼出正确的 HTML
+                        const sortedMessages = data.messages.sort((a, b) => a.id - b.id);
+
                         let html = '';
-                        data.messages.forEach(msg => {
-                            // 根据是否是自己的消息拼接 HTML
+                        sortedMessages.forEach(msg => {
+                            // 去重
+                            if (document.querySelector(`.message-wrapper[data-msg-id="${msg.id}"]`)) return;
+
                             if (msg.is_my_msg) {
                                 html += `
                                     <div class="message-wrapper message-right" data-msg-id="${msg.id}">
@@ -366,19 +414,17 @@
                                     </div>`;
                             }
                         });
-
                         // 插入到按钮的后面
-                        btn.insertAdjacentHTML('afterend', html);
+                        msgBox.insertAdjacentHTML('afterbegin', html);
                     }
 
-                    // 3. 根据后端 has_more 字段决定按钮去留
+                    // ... 保持原有逻辑不变 ...
                     if (data.has_more) {
                         btn.innerText = '▲ 点击加载更多历史消息';
-                        btn.style.pointerEvents = 'auto'; // 恢复点击
+                        btn.style.pointerEvents = 'auto';
                     } else {
                         btn.innerText = '已显示所有历史消息';
                         btn.style.cursor = 'default';
-                        // 1秒后淡出移除
                         setTimeout(() => btn.remove(), 1000);
                     }
                 } else {

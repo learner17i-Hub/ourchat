@@ -177,6 +177,7 @@ def join_room_view(request):
 
     return redirect('lobby')
 
+
 @login_required
 def chat_view(request, room_name=None):
     # 获取用户加入的所有房间 (用于左侧列表)
@@ -200,14 +201,22 @@ def chat_view(request, room_name=None):
     if request.user not in active_room.members.all():
         return redirect('lobby')
 
-    # 获取该房间的历史消息 (时间正序)
-        # 1. 获取该房间的消息总数
+    # 1. 获取该房间的消息总数
     total_count = active_room.messages.count()
 
     # 2. 只取最后 10 条消息 (初始显示)
     # 先倒序取前10，再反转回正序
     recent_messages = active_room.messages.order_by('-timestamp')[:10]
-    messages = reversed(recent_messages)
+
+    # 【核心修复】将迭代器转为列表 (list)，这样才能在 Python 中获取最后一个元素的 ID
+    messages = list(reversed(recent_messages))
+
+    # 【核心修复】在后端直接计算出最后一条消息的 ID
+    # 避免前端模板因无法解析 iterator.last 而得到默认值 0
+    if messages:
+        last_id = messages[-1].id
+    else:
+        last_id = 0
 
     # 3. 只要总数超过 10 条，就显示“查看历史”按钮
     has_more = total_count > 10
@@ -217,12 +226,11 @@ def chat_view(request, room_name=None):
         'active_room': active_room,
         'messages': messages,
         'user': request.user,
-        'has_more': has_more  # 告诉前端是否显示加载按钮
+        'has_more': has_more,
+        'last_id': last_id  # 【重要】将计算好的 ID 传给前端
     }
-    # === 修改部分结束 ===
 
     return render(request, 'chat/chat.html', context)
-
 
 # 2. 发送消息 API (供 JS 调用)
 @login_required
@@ -245,9 +253,10 @@ def send_message_api(request):
             content=content
         )
 
-        # 返回成功信息，包含刚存入的时间，方便前端显示
+        # 【核心修复】必须返回 id，否则前端无法去重和排序
         return JsonResponse({
             'success': True,
+            'id': msg.id,  # <--- 添加这一行 !!!
             'timestamp': msg.timestamp.strftime("%H:%M"),
             'sender': msg.sender.username
         })
@@ -257,22 +266,21 @@ def send_message_api(request):
 
 @login_required
 def get_messages_api(request):
-    # 获取前端传来的房间ID和最后一条消息的ID
     room_id = request.GET.get('room_id')
-    last_message_id = request.GET.get('last_message_id', 0) # 默认为0
+    last_message_id = request.GET.get('last_message_id', 0)
 
     if not room_id:
         return JsonResponse({'success': False})
 
     try:
-        # 核心逻辑：只查 ID 比 last_message_id 大的消息
-        # id__gt 是 Django 的语法，意思是 ID Greater Than (大于)
+        # 【建议优化】强制转为 int，防止 dirty data
+        last_message_id = int(last_message_id)
+
         new_messages = Message.objects.filter(
             room_id=room_id,
             id__gt=last_message_id
-        ).order_by('timestamp')
+        ).order_by('timestamp')  # 这里是对的，保持不变
 
-        # 把消息转换成 JSON 格式列表
         messages_list = []
         for msg in new_messages:
             messages_list.append({
@@ -280,13 +288,14 @@ def get_messages_api(request):
                 'sender': msg.sender.username,
                 'content': msg.content,
                 'timestamp': msg.timestamp.strftime("%H:%M"),
-                'is_my_msg': msg.sender == request.user # 标记是不是我发的
+                'is_my_msg': msg.sender == request.user
             })
 
         return JsonResponse({'success': True, 'messages': messages_list})
     except Exception as e:
-        return JsonResponse({'success': False, 'error': str(e)})
-
+        # 如果转换 int 失败，或者其他错误，返回 0 条消息，不要报错崩溃
+        print(f"Polling Error: {e}")
+        return JsonResponse({'success': False, 'messages': []})
 
 # === 管理大厅：列出我创建的房间 ===
 @login_required
@@ -413,7 +422,7 @@ def get_history_messages_api(request):
         previous_messages_query = Message.objects.filter(
             room_id=room_id,
             id__lt=first_msg_id  # 这里现在肯定是安全的整数了
-        ).order_by('-id')[:(limit + 1)]
+        ).order_by('-timestamp')[:(limit + 1)]
 
         previous_messages_list = list(previous_messages_query)
 
