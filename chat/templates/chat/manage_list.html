@@ -1,0 +1,74 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>我的房间 - 管理中心</title>
+    <style>
+        /* 复用 Lobby 的基础样式 */
+        body { font-family: 'Segoe UI', sans-serif; background: #f5f7fa; display: flex; flex-direction: column; height: 100vh; margin: 0; }
+        .navbar { padding: 20px 40px; background: white; box-shadow: 0 2px 10px rgba(0,0,0,0.05); display: flex; justify-content: space-between; align-items: center; }
+        .back-btn { text-decoration: none; color: #333; font-weight: bold; }
+
+        .container { flex: 1; padding: 40px; max-width: 1000px; margin: 0 auto; width: 100%; }
+        .page-title { font-size: 28px; color: #333; margin-bottom: 30px; border-left: 5px solid #333; padding-left: 15px; }
+
+        .room-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 30px; }
+
+        .room-card {
+            background: white; border-radius: 15px; padding: 25px;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.05); border: 2px solid transparent;
+            transition: 0.3s; position: relative;
+        }
+        .room-card:hover { transform: translateY(-5px); border-color: #667eea; box-shadow: 0 15px 30px rgba(0,0,0,0.1); }
+
+        .room-name { font-size: 20px; font-weight: bold; color: #333; margin-bottom: 10px; }
+        .room-info { color: #666; font-size: 14px; margin-bottom: 20px; }
+        .badge { background: #eee; padding: 4px 8px; border-radius: 4px; font-size: 12px; }
+        .badge-lock { background: #ffeaa7; color: #d35400; }
+
+        .btn-manage {
+            display: block; width: 100%; padding: 10px 0; text-align: center;
+            background: #333; color: white; text-decoration: none; border-radius: 25px;
+            font-weight: bold; transition: 0.2s;
+        }
+        .btn-manage:hover { background: #555; }
+
+        .empty-state { text-align: center; color: #999; margin-top: 50px; font-size: 18px; }
+    </style>
+</head>
+<body>
+    <div class="navbar">
+        <a href="{% url 'lobby' %}" class="back-btn">← 返回大厅</a>
+        <div style="font-weight: bold;">管理中心</div>
+    </div>
+
+    <div class="container">
+        <h1 class="page-title">我创建的聊天室</h1>
+
+        {% if rooms %}
+            <div class="room-grid">
+                {% for room in rooms %}
+                <div class="room-card">
+                    <div class="room-name">{{ room.name }}</div>
+                    <div class="room-info">
+                        {% if room.room_password %}
+                            <span class="badge badge-lock">🔒 加密</span>
+                        {% else %}
+                            <span class="badge">🌐 公开</span>
+                        {% endif %}
+                        <span class="badge" style="margin-left: 5px;">👥 {{ room.members.count }} 人</span>
+                    </div>
+                    <a href="{% url 'edit_room' room.name %}" class="btn-manage">管理房间</a>
+                </div>
+                {% endfor %}
+            </div>
+        {% else %}
+            <div class="empty-state">
+                <p>你还没有创建任何房间</p>
+                <a href="{% url 'lobby' %}" style="color:#667eea;">去创建一个?</a>
+            </div>
+        {% endif %}
+    </div>
+</body>
+</html>

@@ -12,4 +12,8 @@ urlpatterns = [
     path('chat/<str:room_name>/', views.chat_view, name='chat_room'),
     path('api/send_message/', views.send_message_api, name='send_message'),
     path('api/get_messages/', views.get_messages_api, name='get_messages'),
+    path('manage/', views.manage_dashboard, name='manage_dashboard'),
+    path('manage/<str:room_name>/edit/', views.edit_room, name='edit_room'),
+    path('manage/<str:room_name>/members/', views.manage_members, name='manage_members'),
+    path('manage/<str:room_name>/kick/<int:user_id>/', views.kick_member, name='kick_member'),
 ]

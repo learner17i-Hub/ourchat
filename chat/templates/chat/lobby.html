@@ -46,8 +46,8 @@
         }
         .card-img-circle {
             width: 100px; height: 100px; border-radius: 50%; border: 2px solid #333;
-            display: flex; justify-content: center; align-items: center; margin-bottom: 30px;
-            font-size: 14px; color: #ff4757;
+            margin-bottom: 30px;
+            object-fit: cover; /* 确保图片填充圆形且不变形 */
         }
         .card-text { font-size: 20px; font-weight: bold; }
 
@@ -67,7 +67,7 @@
             padding: 40px; border-radius: 20px;
             box-shadow: 0 20px 50px rgba(0,0,0,0.3);
             text-align: center;
-            border: 2px solid #333; /* 你的黑边框设计 */
+            border: 2px solid #333;
             animation: popIn 0.3s ease;
             position: relative;
         }
@@ -81,12 +81,12 @@
 
         .modal-title { font-size: 24px; margin-bottom: 30px; color: #333; }
 
-        /* 表单样式 (复用你创建房间的设计) */
+        /* 表单样式 */
         .form-group { margin-bottom: 20px; display: flex; align-items: center; }
         .form-label { width: 100px; text-align: right; margin-right: 15px; font-weight: bold; color: #333; }
         .form-input {
             flex: 1; padding: 10px 15px;
-            border: 2px solid #333; border-radius: 25px; /* 圆角 */
+            border: 2px solid #333; border-radius: 25px;
             font-size: 16px; outline: none;
         }
         .form-input:focus { border-color: #667eea; }
@@ -121,17 +121,17 @@
 
         <div class="cards-wrapper">
             <div class="action-card" onclick="openJoinModal()">
-                <div class="card-img-circle">图片</div>
+                <img src="{% static 'chat/images/join.png' %}" class="card-img-circle" alt="加入">
                 <span class="card-text">加入聊天室</span>
             </div>
 
             <div class="action-card" onclick="openCreateModal()">
-                <div class="card-img-circle">图片</div>
+                <img src="{% static 'chat/images/create.png' %}" class="card-img-circle" alt="创建">
                 <span class="card-text">创建聊天室</span>
             </div>
 
-            <a href="/admin/" target="_blank" class="action-card">
-                <div class="card-img-circle">图片</div>
+            <a href="{% url 'manage_dashboard' %}" class="action-card">
+                <img src="{% static 'chat/images/manage.png' %}" class="card-img-circle" alt="管理">
                 <span class="card-text">管理聊天室</span>
             </a>
         </div>
@@ -238,7 +238,6 @@
             .then(response => response.json())
             .then(data => {
                 if (data.success) {
-                    // ✅ 核心修改：创建成功后，直接跳转到聊天页面
                     window.location.href = '/chat/' + data.room_name + '/';
                 } else {
                     showError('modalError', data.error);
@@ -278,7 +277,6 @@
             .then(response => response.json())
             .then(data => {
                 if (data.success) {
-                    // ✅ 核心修改：加入成功后，直接跳转到聊天页面
                     window.location.href = '/chat/' + data.room_name + '/';
                 } else {
                     showError('joinError', '⚠️ ' + data.error);

@@ -10,8 +10,22 @@ from django.contrib.auth import authenticate, login,logout
 from .models import ChatRoom
 from django.views.decorators.http import require_POST
 from .models import ChatRoom, Message
-
+from django.shortcuts import render, redirect, get_object_or_404
+from django.contrib.auth.decorators import login_required
+from django.contrib import messages
+from .models import ChatRoom #
+from django.contrib.auth.models import User
 # chat/views.py
+
+import json
+from datetime import timedelta
+from django.utils import timezone
+from django.db.models import Count
+from django.db.models.functions import TruncHour
+from django.shortcuts import render, redirect, get_object_or_404
+from django.contrib.auth.decorators import login_required
+from django.contrib import messages
+from .models import ChatRoom, Message
 
 def login_view(request):
     # 1. 如果用户已登录 (比如打开页面时 session 还在)
@@ -260,3 +274,108 @@ def get_messages_api(request):
         return JsonResponse({'success': True, 'messages': messages_list})
     except Exception as e:
         return JsonResponse({'success': False, 'error': str(e)})
+
+
+# === 管理大厅：列出我创建的房间 ===
+@login_required
+def manage_dashboard(request):
+    # 查询当前用户作为 creator (群主) 的所有房间
+    # 你的模型中 related_name='created_rooms'，也可以用 request.user.created_rooms.all()
+    rooms = ChatRoom.objects.filter(creator=request.user)  #
+    return render(request, 'chat/manage_list.html', {'rooms': rooms})
+
+
+# === 房间设置：修改密码等 ===
+@login_required
+def edit_room(request, room_name):
+    room = get_object_or_404(ChatRoom, name=room_name)
+
+    if room.creator != request.user:
+        messages.error(request, "你没有权限管理此房间")
+        return redirect('lobby')
+
+    # === 表单处理逻辑 (保持不变) ===
+    if request.method == 'POST':
+        new_name = request.POST.get('name', '').strip()
+        new_password = request.POST.get('password')
+        confirm_password = request.POST.get('confirm_password')
+
+        if new_name and new_name != room.name:
+            if ChatRoom.objects.filter(name=new_name).exclude(id=room.id).exists():
+                messages.error(request, "该房间名称已存在，请换一个")
+                return render(request, 'chat/manage_edit.html', {'room': room})
+            else:
+                room.name = new_name
+                messages.success(request, "房间名称已更新")
+                room.save()
+                return redirect('edit_room', room_name=room.name)
+
+        if new_password:
+            if new_password != confirm_password:
+                messages.error(request, "两次输入的密码不一致")
+            else:
+                room.room_password = new_password
+                room.save()
+                messages.success(request, "房间密码已更新")
+
+    # === 数据统计逻辑 (核心修改) ===
+    now = timezone.now()
+    yesterday = now - timedelta(days=1)
+
+    recent_msgs = Message.objects.filter(room=room, timestamp__gte=yesterday)
+
+    # 1. 用户发言统计
+    user_stats = recent_msgs.values('sender__username').annotate(count=Count('id')).order_by('-count')
+    user_labels = [item['sender__username'] for item in user_stats]
+    user_data = [item['count'] for item in user_stats]
+
+    # 2. 活跃时段统计
+    time_stats = recent_msgs.annotate(hour=TruncHour('timestamp')).values('hour').annotate(count=Count('id')).order_by(
+        'hour')
+
+    time_labels = []
+    time_data = []
+
+    for item in time_stats:
+        # === 修复点开始 ===
+        # 因为 settings.py 中 USE_TZ = False，这里的 item['hour'] 已经是 naive datetime
+        # 直接拿来用，不用转换
+        local_time = item['hour']
+        # === 修复点结束 ===
+
+        time_labels.append(local_time.strftime("%H:%M"))
+        time_data.append(item['count'])
+
+    context = {
+        'room': room,
+        'user_labels': json.dumps(user_labels),
+        'user_data': json.dumps(user_data),
+        'time_labels': json.dumps(time_labels),
+        'time_data': json.dumps(time_data),
+    }
+
+    return render(request, 'chat/manage_edit.html', context)
+# === 成员管理：查看和移除成员 ===
+@login_required
+def manage_members(request, room_name):
+    room = get_object_or_404(ChatRoom, name=room_name)  #
+
+    if room.creator != request.user:  #
+        return redirect('lobby')
+
+    return render(request, 'chat/manage_members.html', {'room': room})
+
+
+# === 踢人逻辑 ===
+@login_required
+def kick_member(request, room_name, user_id):
+    room = get_object_or_404(ChatRoom, name=room_name)  #
+    user_to_kick = get_object_or_404(User, id=user_id)
+
+    # 只有群主可以踢人，且不能踢自己
+    if room.creator == request.user and user_to_kick != room.creator:  #
+        room.members.remove(user_to_kick)  #
+        messages.success(request, f"用户 {user_to_kick.username} 已被移除")
+
+    return redirect('manage_members', room_name=room_name)
+
