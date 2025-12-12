@@ -257,7 +257,6 @@
             const content = inputMsg.value.trim();
             if (!content) return;
 
-            // 【修改4】发送时禁用按钮和输入框，防止重复点击
             sendBtn.disabled = true;
             sendBtn.innerText = '发送中...';
             inputMsg.disabled = true;
@@ -271,11 +270,14 @@
             .then(data => {
                 if (data.success) {
                     inputMsg.value = '';
-                    if (data.id > lastMessageId) {
-                         lastMessageId = data.id;f
-                    }
-                    // 发送成功后立即拉取一次。
-                    // 因为我们加了去重逻辑，就算轮询也拉到了同样的消息，也不会重复显示了。
+
+                    // ————【删掉这几行】————
+                    // if (data.id > lastMessageId) {
+                    //      lastMessageId = data.id;
+                    // }
+                    // ————————————————————
+
+                    // 直接拉取，它会用旧的ID去查，就能查到你刚发的这条新消息了
                     fetchNewMessages();
                 } else {
                     alert('发送失败: ' + data.error);
@@ -286,7 +288,6 @@
                 alert('网络错误，请稍后重试');
             })
             .finally(() => {
-                // 【修改5】恢复按钮状态
                 sendBtn.disabled = false;
                 sendBtn.innerText = '发送';
                 inputMsg.disabled = false;
