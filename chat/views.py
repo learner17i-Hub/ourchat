@@ -95,7 +95,15 @@ def register_view(request):
 
 @login_required
 def lobby_view(request):
-    return render(request, 'chat/lobby.html')
+    # 获取当前用户加入的所有房间
+    # 根据你在 chat_view 中使用的 request.user.joined_rooms 逻辑
+    joined_rooms = request.user.joined_rooms.all()
+
+    context = {
+        'rooms': joined_rooms
+    }
+    return render(request, 'chat/lobby.html', context)
+    # === 修改部分结束 ===
 
 def logout_view(request):
     logout(request) # 清除 session
@@ -463,3 +471,41 @@ def get_history_messages_api(request):
         print(f"获取历史消息报错: {e}")
         return JsonResponse({'success': False, 'error': str(e)})
 
+# chat/views.py
+
+@login_required
+def manage_messages(request, room_name):
+    room = get_object_or_404(ChatRoom, name=room_name)
+
+    # 权限校验
+    if room.creator != request.user:
+        messages.error(request, "你没有权限管理此房间")
+        return redirect('lobby')
+
+    # 获取该房间所有消息，按时间倒序排列（最新的在最前）
+    room_messages = room.messages.all().order_by('-timestamp')
+
+    return render(request, 'chat/manage_messages.html', {
+        'room': room,
+        'messages_list': room_messages
+    })
+
+@login_required
+@require_POST
+def delete_messages(request, room_name):
+    room = get_object_or_404(ChatRoom, name=room_name)
+
+    if room.creator != request.user:
+        return redirect('lobby')
+
+    # 获取前端勾选的所有消息ID (checkbox name="message_ids")
+    msg_ids = request.POST.getlist('message_ids')
+
+    if msg_ids:
+        # 安全删除：确保这些消息确实属于当前房间
+        deleted_count, _ = Message.objects.filter(room=room, id__in=msg_ids).delete()
+        messages.success(request, f"成功删除了 {deleted_count} 条消息")
+    else:
+        messages.warning(request, "未选择任何消息")
+
+    return redirect('manage_messages', room_name=room_name)

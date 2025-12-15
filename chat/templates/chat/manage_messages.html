@@ -1,0 +1,127 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>消息管理 - {{ room.name }}</title>
+    <style>
+        body { font-family: 'Segoe UI', sans-serif; background: #f5f7fa; display: flex; flex-direction: column; min-height: 100vh; margin: 0; }
+        .navbar { padding: 20px 40px; background: white; box-shadow: 0 2px 10px rgba(0,0,0,0.05); }
+        .back-link { text-decoration: none; color: #333; font-weight: bold; }
+
+        .main-box {
+            background: white; width: 100%; max-width: 900px;
+            margin: 40px auto; padding: 40px; border-radius: 20px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.05);
+        }
+        .header-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; padding-bottom: 10px; border-bottom: 1px solid #eee; }
+        .page-title { font-size: 24px; margin: 0; }
+
+        /* 消息列表表格 */
+        .msg-table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+        .msg-table th { text-align: left; padding: 15px; background: #f8f9fa; color: #666; font-weight: 600; }
+        .msg-table td { padding: 15px; border-bottom: 1px solid #eee; vertical-align: top; }
+        .msg-table tr:hover { background: #f1f3f5; }
+
+        .sender-name { font-weight: bold; color: #333; margin-bottom: 5px; }
+        .msg-content { color: #555; word-break: break-all; }
+        .msg-time { color: #999; font-size: 12px; white-space: nowrap; }
+        .file-tag { display: inline-block; padding: 2px 6px; background: #e2e8f0; color: #4a5568; border-radius: 4px; font-size: 12px; margin-top: 5px; }
+
+        /* 按钮样式 */
+        .btn-delete {
+            background: #ff4757; color: white; border: none; padding: 10px 25px;
+            border-radius: 25px; cursor: pointer; font-weight: bold; transition: 0.2s;
+        }
+        .btn-delete:hover { background: #ff6b81; }
+        .btn-delete:disabled { background: #ccc; cursor: not-allowed; }
+
+        /* 复选框样式 */
+        .checkbox-custom { width: 18px; height: 18px; cursor: pointer; }
+
+        .alert { padding: 15px; background: #d4edda; color: #155724; border-radius: 8px; margin-bottom: 20px; }
+    </style>
+</head>
+<body>
+    <div class="navbar">
+        <a href="{% url 'edit_room' room.name %}" class="back-link">← 返回设置</a>
+    </div>
+
+    <div class="main-box">
+        <form method="POST" action="{% url 'delete_messages' room.name %}" id="deleteForm">
+            {% csrf_token %}
+
+            <div class="header-row">
+                <h2 class="page-title">消息管理 ({{ messages_list.count }})</h2>
+                <button type="button" onclick="submitDelete()" id="delBtn" class="btn-delete" disabled>删除选中项</button>
+            </div>
+
+            {% if messages %}
+                {% for message in messages %}
+                    <div class="alert">{{ message }}</div>
+                {% endfor %}
+            {% endif %}
+
+            {% if messages_list %}
+                <table class="msg-table">
+                    <thead>
+                        <tr>
+                            <th width="50"><input type="checkbox" id="selectAll" class="checkbox-custom" onclick="toggleAll(this)"></th>
+                            <th width="150">发送者</th>
+                            <th>内容</th>
+                            <th width="100">时间</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for msg in messages_list %}
+                        <tr>
+                            <td>
+                                <input type="checkbox" name="message_ids" value="{{ msg.id }}" class="checkbox-custom msg-check" onclick="updateBtnState()">
+                            </td>
+                            <td>
+                                <div class="sender-name">{{ msg.sender.username }}</div>
+                            </td>
+                            <td>
+                                <div class="msg-content">
+                                    {{ msg.content }}
+                                    {% if msg.file %}
+                                        <br><span class="file-tag">📎 附件: {{ msg.file.name }}</span>
+                                    {% endif %}
+                                </div>
+                            </td>
+                            <td><span class="msg-time">{{ msg.timestamp|date:"m-d H:i" }}</span></td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            {% else %}
+                <p style="text-align: center; color: #999; margin-top: 50px;">暂无聊天记录</p>
+            {% endif %}
+        </form>
+    </div>
+
+    <script>
+        // 全选/反选逻辑
+        function toggleAll(source) {
+            const checkboxes = document.querySelectorAll('.msg-check');
+            checkboxes.forEach(cb => cb.checked = source.checked);
+            updateBtnState();
+        }
+
+        // 更新按钮可用状态
+        function updateBtnState() {
+            const checkboxes = document.querySelectorAll('.msg-check:checked');
+            const btn = document.getElementById('delBtn');
+            btn.disabled = checkboxes.length === 0;
+            btn.innerText = checkboxes.length > 0 ? `删除选中项 (${checkboxes.length})` : '删除选中项';
+        }
+
+        // 提交确认
+        function submitDelete() {
+            if (confirm("确定要删除选中的消息吗？此操作无法撤销。")) {
+                document.getElementById('deleteForm').submit();
+            }
+        }
+    </script>
+</body>
+</html>

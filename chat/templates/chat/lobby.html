@@ -103,7 +103,88 @@
             border-radius: 8px; margin-bottom: 20px; font-size: 0.9em;
             display: none; /* 默认隐藏 */
         }
+        /* --- 新增：我的群聊列表样式 --- */
+        .my-rooms-section {
+            margin-top: 50px;
+            width: 100%;
+            max-width: 860px; /* 和上面的卡片区域宽度呼应 */
+            text-align: center;
+        }
 
+        .section-title {
+            font-size: 24px;
+            color: #333;
+            margin-bottom: 20px;
+            border-bottom: 2px solid #ddd;
+            display: inline-block;
+            padding-bottom: 5px;
+        }
+
+        .room-list {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 15px;
+            justify-content: center;
+        }
+
+        .room-item {
+            background: white;
+            padding: 10px 20px;
+            border-radius: 12px;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.05);
+            text-decoration: none;
+            color: #333;
+            display: flex;
+            align-items: center;
+            width: 200px; /* 每个条目的宽度 */
+            transition: transform 0.2s, box-shadow 0.2s;
+            border: 1px solid #eee;
+        }
+
+        .room-item:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 8px 15px rgba(0,0,0,0.1);
+            border-color: #667eea;
+        }
+
+        .room-icon {
+            width: 40px;
+            height: 40px;
+            background-color: #333; /* 对应你原本的黑色风格 */
+            color: white;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            margin-right: 12px;
+            font-size: 18px;
+        }
+
+        .room-info {
+            text-align: left;
+            flex: 1;
+            overflow: hidden;
+        }
+
+        .room-name {
+            font-weight: bold;
+            font-size: 16px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .room-desc {
+            font-size: 12px;
+            color: #888;
+            margin-top: 2px;
+        }
+
+        .empty-tip {
+            color: #999;
+            font-style: italic;
+        }
     </style>
 </head>
 <body>
@@ -134,6 +215,32 @@
                 <img src="{% static 'chat/images/manage.png' %}" class="card-img-circle" alt="管理">
                 <span class="card-text">管理聊天室</span>
             </a>
+        </div>
+        <div class="main-container">
+
+
+        <div class="cards-wrapper">
+            </div>
+
+        <div class="my-rooms-section">
+            <h2 class="section-title">我的群聊</h2>
+
+            {% if rooms %}
+                <div class="room-list">
+                    {% for room in rooms %}
+                        <a href="{% url 'chat_room' room.name %}" class="room-item">
+                            <div class="room-icon">{{ room.name|slice:":1"|upper }}</div>
+                            <div class="room-info">
+                                <div class="room-name">{{ room.name }}</div>
+                                <div class="room-desc">点击进入</div>
+                            </div>
+                        </a>
+                    {% endfor %}
+                </div>
+            {% else %}
+                <p class="empty-tip">你还没有加入任何群聊</p>
+            {% endif %}
+        </div>
         </div>
     </div>
 

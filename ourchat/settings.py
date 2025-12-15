@@ -22,7 +22,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 SECRET_KEY = 'django-insecure-o_j1$^=7%ca-8p1!#nm990itldesy^xu8o=e_9auvtqe3e1^bp'
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = False
+DEBUG = True
 
 ALLOWED_HOSTS = ["*",]
 
@@ -52,6 +52,7 @@ MIDDLEWARE = [
 CSRF_TRUSTED_ORIGINS=[
     # 每次使用时添加新的域名
     'https://*.ngrok-free.dev/',
+    'http://frp5.ccszxc.site:*',
 ]
 
 ROOT_URLCONF = 'ourchat.urls'

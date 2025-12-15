@@ -17,5 +17,6 @@ urlpatterns = [
     path('manage/<str:room_name>/edit/', views.edit_room, name='edit_room'),
     path('manage/<str:room_name>/members/', views.manage_members, name='manage_members'),
     path('manage/<str:room_name>/kick/<int:user_id>/', views.kick_member, name='kick_member'),
-
+    path('manage/<str:room_name>/messages/', views.manage_messages, name='manage_messages'),
+    path('manage/<str:room_name>/messages/delete/', views.delete_messages, name='delete_messages'),
 ]
